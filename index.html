@@ -105,7 +105,7 @@
             <div class="step">
               <span class="step-label">01 选择备份</span>
               <h2>导入源文件</h2>
-              <p class="field-note">支持章鱼机 `.ee`、330/兔k机 JSON，以及 330 分片导出的 ZIP。</p>
+              <p class="field-note">支持章鱼机 `.ee`、330/兔k机、Perigee 和 zz 的 JSON，以及 330/zz 的 ZIP 备份。</p>
               <div class="file-row">
                 <label class="file-button" for="backup-file">选择文件</label>
                 <input id="backup-file" type="file" accept=".ee,.json,.zip,application/json,application/zip" />
@@ -125,6 +125,14 @@
                 <label class="target-option">
                   <input type="radio" name="target" value="octopus" />
                   <span><strong>章鱼机</strong><span>生成可导入的 `.ee` Gzip 备份</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="perigee" />
+                  <span><strong>Perigee 小手机</strong><span>生成 Perigee 原生 JSON 备份</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="zz" />
+                  <span><strong>zz 小手机</strong><span>生成 zz 原生 JSON 备份</span></span>
                 </label>
               </div>
             </div>
@@ -188,6 +196,15 @@
           Array.isArray(data.chats) ||
           (data.type === "EPhoneChunkedBackup" && data.data)
         );
+      }
+
+      function isPerigeeBackup(data) {
+        return Boolean(data && Array.isArray(data.characters) && data.conversations && typeof data.conversations === "object" &&
+          (data.chatSettings || data.chatMeta || data.systemConfig));
+      }
+
+      function isZzBackup(data) {
+        return Boolean(data && Array.isArray(data.contacts) && data.chatHistory && typeof data.chatHistory === "object");
       }
 
       function hasEphoneTables(data) {
@@ -288,6 +305,9 @@
           if (!entry.name.toLowerCase().endsWith(".json")) continue;
           try {
             const candidate = JSON.parse(decoder.decode(entry.bytes));
+            if (isZzBackup(candidate)) {
+              return { format: "zz", sourceLabel: "zz 小手机", data: candidate };
+            }
             const data = sourceData(candidate);
             if (isEphoneBackup(candidate) || hasEphoneTables(data) || hasEphoneTables(candidate.data)) {
               fragments.push(candidate);
@@ -324,11 +344,13 @@
         try {
           const data = JSON.parse(text);
           if (isOctopusBackup(data)) return { format: "octopus", sourceLabel: "章鱼机", data };
+          if (isPerigeeBackup(data)) return { format: "perigee", sourceLabel: "Perigee 小手机", data };
+          if (isZzBackup(data)) return { format: "zz", sourceLabel: "zz 小手机", data };
           if (isEphoneBackup(data)) return { format: "ephone", sourceLabel: "330 / 兔k机", data };
         } catch (error) {
           throw new Error("文件不是有效的 JSON 备份，或文件内容已损坏。");
         }
-        throw new Error("未识别此备份格式。请选择章鱼机 .ee、330/兔k机 JSON，或 330 分片导出的 ZIP。 ");
+        throw new Error("未识别此备份格式。请选择章鱼机 .ee、330/兔k机、Perigee、zz 的备份文件。 ");
       }
 
       function sourceData(data) {
@@ -472,6 +494,79 @@
         });
       }
 
+      function perigeeWorldBooksToEphone(worldBooks) {
+        return asArray(worldBooks).map((book) => ({
+          id: book.id || `perigee_wb_${Date.now()}`,
+          name: book.name || "未命名世界书",
+          content: asArray(book.entries).map((entry) => ({
+            keys: asArray(entry.keys).length ? entry.keys : [entry.title || book.name || "世界书"],
+            comment: entry.title || "从 Perigee 导入",
+            content: entry.content || "",
+            enabled: entry.enabled !== false,
+          })),
+        }));
+      }
+
+      function zzWorldBooksToEphone(worldbook) {
+        const entries = asArray(worldbook).map((entry) => ({
+          keys: asArray(entry.keys).length ? entry.keys : [entry.title || "世界书"],
+          comment: entry.remark || entry.title || "从 zz 导入",
+          content: entry.content || "",
+          enabled: entry.enabled !== false,
+        }));
+        return entries.length ? [{ id: "zz_worldbook", name: "zz 世界书", content: entries }] : [];
+      }
+
+      function perigeeToEphone(rawData) {
+        const conversations = rawData.conversations || {};
+        const chats = [
+          ...asArray(rawData.characters).map((character) => toEphoneChat({
+            ...character,
+            persona: character.personality || character.persona || "",
+            history: conversations[character.id],
+          }, false)),
+          ...asArray(rawData.groups).map((group) => toEphoneChat({
+            ...group,
+            history: conversations[`grp_${group.id}`] || conversations[group.id],
+            members: asArray(group.memberIds).map((id) => ({ id, originalCharId: id })),
+          }, true)),
+        ];
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats,
+            worldBooks: perigeeWorldBooksToEphone(rawData.worldBooks),
+            userStickers: asArray(rawData.userStickers),
+            apiConfig: rawData.apiConfig ? [rawData.apiConfig] : [],
+            globalSettings: rawData.systemConfig ? [rawData.systemConfig] : [],
+          },
+        };
+      }
+
+      function zzToEphone(rawData) {
+        const chats = asArray(rawData.contacts).map((contact) => {
+          const isGroup = contact.chatType === "group" || Boolean(contact.groupMeta);
+          return toEphoneChat({
+            ...contact,
+            history: rawData.chatHistory?.[contact.id],
+            members: asArray(contact.groupMeta?.members || contact.groupMeta?.memberIds),
+            myAvatar: contact.myAvatar || rawData.userProfile?.avatar || "",
+            myPersona: rawData.userProfile?.desc || "",
+          }, isGroup);
+        });
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats,
+            worldBooks: zzWorldBooksToEphone(rawData.worldbook),
+            userStickers: asArray(rawData.userStickers),
+            globalSettings: rawData.userProfile ? [rawData.userProfile] : [],
+          },
+        };
+      }
+
       function toEphoneCompatible(sourceFormat, rawData) {
         if (sourceFormat === "ephone") {
           const data = sourceData(rawData);
@@ -486,6 +581,8 @@
             },
           };
         }
+        if (sourceFormat === "perigee") return perigeeToEphone(rawData);
+        if (sourceFormat === "zz") return zzToEphone(rawData);
         return {
           version: 3,
           timestamp: Date.now(),
@@ -506,7 +603,7 @@
         if (sourceFormat === "octopus") {
           return { ...rawData, _exportVersion: "2.0", _exportTimestamp: Date.now(), _optimizedStorage: true };
         }
-        const data = sourceData(rawData);
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
         const chats = asArray(data.chats);
         const apiConfig = asArray(data.apiConfig)[0] || {};
         const globalSettings = asArray(data.globalSettings)[0] || {};
@@ -526,6 +623,126 @@
         };
       }
 
+      function ephoneWorldBooksToPerigee(worldBooks) {
+        return asArray(worldBooks).map((book) => ({
+          id: book.id || `wb_${Date.now()}`,
+          name: book.name || "未命名世界书",
+          entries: (Array.isArray(book.content) ? book.content : [{ content: book.content || "", keys: [book.name || "世界书"] }])
+            .map((entry, index) => ({
+              id: entry.id || `entry_${index}_${Date.now()}`,
+              title: entry.comment || entry.title || `条目 ${index + 1}`,
+              keys: asArray(entry.keys),
+              content: entry.content || "",
+              enabled: entry.enabled !== false,
+            })),
+        }));
+      }
+
+      function toPerigeeBackup(sourceFormat, rawData) {
+        if (sourceFormat === "perigee") return { ...rawData };
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const chats = asArray(data.chats);
+        const characters = chats.filter((chat) => !chat.isGroup).map((chat) => ({
+          id: chat.id,
+          name: chat.name || "未命名角色",
+          avatar: chat.avatar || chat.settings?.aiAvatar || "",
+          personality: valueOr(chat.settings, ["aiPersona", "ai-persona"], ""),
+          firstMessage: "",
+          worldBookId: asArray(chat.settings?.linkedWorldBookIds)[0] || null,
+          readMessageCount: Number(chat.settings?.maxMemory || 10),
+          maxMessagesPerReply: 8,
+          autoSummaryCount: 20,
+          hideAfterSummary: false,
+          replyLang: "zh",
+        }));
+        const groups = chats.filter((chat) => chat.isGroup).map((chat) => ({
+          id: chat.id,
+          name: chat.name || "未命名群聊",
+          memberIds: asArray(chat.members).map((member) => member.originalCharId || member.id || member).filter(Boolean),
+          createdAt: Date.now(),
+        }));
+        const conversations = {};
+        const chatMeta = {};
+        chats.forEach((chat) => {
+          const key = chat.isGroup ? `grp_${chat.id}` : chat.id;
+          conversations[key] = normalizeMessages(chat.history).map((message) => ({
+            ...message,
+            type: message.type || "text",
+          }));
+          chatMeta[key] = { isPinned: Boolean(chat.isPinned), isMuted: false, unreadCount: Number(chat.unreadCount || 0) };
+        });
+        const primaryChat = chats.find((chat) => !chat.isGroup);
+        return {
+          characters,
+          groups,
+          conversations,
+          chatMeta,
+          chatSettings: { useLineGreen: true, bgColor: "#8cabd9", bgImageUrl: "", showRead: true, showTyping: true, fontSize: "normal" },
+          worldBooks: ephoneWorldBooksToPerigee(data.worldBooks),
+          userStickers: asArray(data.userStickers),
+          userProfile: { name: valueOr(primaryChat?.settings, ["myName", "my-persona"], "User"), bio: valueOr(primaryChat?.settings, ["myPersona", "my-persona"], "") },
+          apiConfig: asArray(data.apiConfig)[0] || {},
+          systemConfig: asArray(data.globalSettings)[0] || { language: "zh", theme: "winter-night", wallpaper: "" },
+        };
+      }
+
+      function ephoneWorldBooksToZz(worldBooks) {
+        const entries = [];
+        asArray(worldBooks).forEach((book) => {
+          const sourceEntries = Array.isArray(book.content) ? book.content : [{ content: book.content || "", keys: [book.name || "世界书"] }];
+          sourceEntries.forEach((entry, index) => entries.push({
+            id: entry.id || `zz_wb_${Date.now()}_${index}`,
+            categoryId: "imported",
+            keys: asArray(entry.keys),
+            content: entry.content || "",
+            enabled: entry.enabled !== false,
+            remark: entry.comment || book.name || "从其他小手机导入",
+          }));
+        });
+        return entries;
+      }
+
+      function toZzBackup(sourceFormat, rawData) {
+        if (sourceFormat === "zz") return { ...rawData };
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const chats = asArray(data.chats);
+        const contacts = chats.map((chat) => {
+          const settings = chat.settings || {};
+          return {
+            id: chat.id,
+            name: chat.name || "未命名联系人",
+            nickname: chat.name || "未命名联系人",
+            remark: chat.name || "",
+            persona: valueOr(settings, ["aiPersona", "ai-persona"], ""),
+            style: "正常",
+            avatar: chat.avatar || valueOr(settings, ["aiAvatar", "ai-avatar"], ""),
+            myAvatar: valueOr(settings, ["myAvatar", "my-avatar"], ""),
+            chatBg: settings.background || "",
+            chatType: chat.isGroup ? "group" : "private",
+            groupMeta: chat.isGroup ? {
+              status: "active",
+              memberIds: asArray(chat.members).map((member) => member.originalCharId || member.id || member).filter(Boolean),
+            } : undefined,
+            showTimestamp: true,
+          };
+        });
+        const chatHistory = {};
+        chats.forEach((chat) => { chatHistory[chat.id] = normalizeMessages(chat.history); });
+        const primaryChat = chats.find((chat) => !chat.isGroup);
+        return {
+          contacts,
+          chatHistory,
+          contactGroups: [],
+          worldbook: ephoneWorldBooksToZz(data.worldBooks),
+          wbCategories: [{ id: "imported", name: "导入世界书", desc: "由备份转换器生成" }],
+          userProfile: {
+            name: valueOr(primaryChat?.settings, ["myName"], "User Name"),
+            avatar: valueOr(primaryChat?.settings, ["myAvatar", "my-avatar"], ""),
+            desc: valueOr(primaryChat?.settings, ["myPersona", "my-persona"], ""),
+          },
+        };
+      }
+
       function collectStats(format, data) {
         if (format === "octopus") {
           const characters = asArray(data.characters);
@@ -535,6 +752,24 @@
             groups: groups.length,
             messages: [...characters, ...groups].reduce((total, item) => total + asArray(item.history).length, 0),
             worldBooks: asArray(data.worldBooks).length,
+          };
+        }
+        if (format === "perigee") {
+          const conversations = data.conversations || {};
+          return {
+            characters: asArray(data.characters).length,
+            groups: asArray(data.groups).length,
+            messages: Object.values(conversations).reduce((total, messages) => total + asArray(messages).length, 0),
+            worldBooks: asArray(data.worldBooks).length,
+          };
+        }
+        if (format === "zz") {
+          const contacts = asArray(data.contacts);
+          return {
+            characters: contacts.filter((contact) => contact.chatType !== "group" && !contact.groupMeta).length,
+            groups: contacts.filter((contact) => contact.chatType === "group" || contact.groupMeta).length,
+            messages: Object.values(data.chatHistory || {}).reduce((total, messages) => total + asArray(messages).length, 0),
+            worldBooks: asArray(data.worldbook).length,
           };
         }
         const source = sourceData(data);
@@ -602,10 +837,18 @@
             const output = toEphoneCompatible(source.format, source.data);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             showSuccess(source.sourceLabel, "330 / 兔k机", stats, blob, `EPhone-Compatible-Backup-v330-${date}.json`);
-          } else {
+          } else if (target === "octopus") {
             const output = toOctopusBackup(source.format, source.data);
             const blob = await gzipJson(output);
             showSuccess(source.sourceLabel, "章鱼机", stats, blob, `章鱼机_转换备份_${date}.ee`);
+          } else if (target === "perigee") {
+            const output = toPerigeeBackup(source.format, source.data);
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+            showSuccess(source.sourceLabel, "Perigee 小手机", stats, blob, `perigee-os-full-converted-${date}.json`);
+          } else {
+            const output = toZzBackup(source.format, source.data);
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+            showSuccess(source.sourceLabel, "zz 小手机", stats, blob, `iphone-sim-config-converted-${date}.json`);
           }
         } catch (error) {
           console.error(error);
