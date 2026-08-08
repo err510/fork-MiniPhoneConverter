@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小手机备份转换器</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #17212b;
+        --muted: #617081;
+        --line: #cfd8df;
+        --panel: #ffffff;
+        --canvas: #eef3f2;
+        --teal: #007c78;
+        --teal-dark: #005e5b;
+        --coral: #d75a4a;
+        --coral-soft: #fff0ec;
+        --success: #087f54;
+        --warning: #915a00;
+        --warning-soft: #fff7e6;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-width: 320px;
+        background: var(--canvas);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .shell { max-width: 1080px; margin: 0 auto; padding: 34px 22px 48px; }
+      header { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; margin-bottom: 28px; }
+      h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 0; }
+      .subtitle { max-width: 620px; margin: 7px 0 0; color: var(--muted); }
+      .local-mark { color: var(--teal-dark); font-size: 13px; font-weight: 650; white-space: nowrap; }
+      main { display: grid; gap: 18px; }
+      .surface { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; }
+      .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+      .step { min-width: 0; }
+      .step-label { display: block; margin-bottom: 7px; color: var(--teal-dark); font-size: 12px; font-weight: 750; letter-spacing: 0; text-transform: uppercase; }
+      h2 { margin: 0 0 10px; font-size: 18px; letter-spacing: 0; }
+      p { margin: 0; }
+      .field-note { min-height: 45px; color: var(--muted); font-size: 13px; }
+      .file-row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+      input[type="file"] { display: none; }
+      button, .file-button {
+        display: inline-flex; align-items: center; justify-content: center; min-height: 38px;
+        border: 1px solid transparent; border-radius: 5px; padding: 8px 13px; cursor: pointer;
+        font: inherit; font-weight: 650; letter-spacing: 0;
+      }
+      .file-button { color: #fff; background: var(--teal); }
+      .file-button:hover, .primary:hover { background: var(--teal-dark); }
+      .file-name { overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+      .target-list { display: grid; gap: 8px; margin-top: 12px; }
+      .target-option {
+        display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--line);
+        border-radius: 5px; padding: 10px; cursor: pointer;
+      }
+      .target-option:has(input:checked) { border-color: var(--teal); background: #eef9f8; }
+      .target-option input { margin: 4px 0 0; accent-color: var(--teal); }
+      .target-option strong { display: block; font-size: 14px; }
+      .target-option span { display: block; color: var(--muted); font-size: 12px; }
+      .actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+      .primary { background: var(--teal); color: #fff; }
+      button:disabled { cursor: not-allowed; opacity: .55; }
+      .hint { color: var(--muted); font-size: 13px; }
+      .result { display: none; }
+      .result.visible { display: block; }
+      .result-top { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+      .result h2 { margin-bottom: 3px; }
+      .success { color: var(--success); font-weight: 700; }
+      .download { color: #fff; background: var(--teal); text-decoration: none; }
+      .report { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 20px 0 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--line); }
+      .stat { min-width: 0; padding: 12px; background: #fbfcfc; }
+      .stat span { display: block; color: var(--muted); font-size: 12px; }
+      .stat strong { display: block; margin-top: 2px; font-size: 22px; }
+      .notice { margin-top: 12px; border-left: 3px solid #d89a2b; background: var(--warning-soft); padding: 10px 12px; color: var(--warning); font-size: 13px; }
+      .error { border-left-color: var(--coral); background: var(--coral-soft); color: #9f2d20; }
+      .details { margin-top: 14px; color: var(--muted); font-size: 13px; white-space: pre-line; }
+      footer { margin-top: 4px; color: var(--muted); font-size: 12px; }
+      @media (max-width: 720px) {
+        .shell { padding: 24px 14px 32px; }
+        header, .actions, .result-top { align-items: stretch; flex-direction: column; }
+        .steps { grid-template-columns: 1fr; }
+        .field-note { min-height: auto; }
+        .report { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .download { width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div>
+          <h1>小手机备份转换器</h1>
+          <p class="subtitle">在 330、兔k机和章鱼机之间转换备份。所有处理都在当前浏览器中完成。</p>
+        </div>
+        <div class="local-mark">本地离线处理</div>
+      </header>
+
+      <main>
+        <section class="surface" aria-label="转换设置">
+          <div class="steps">
+            <div class="step">
+              <span class="step-label">01 选择备份</span>
+              <h2>导入源文件</h2>
+              <p class="field-note">支持章鱼机 `.ee`、330/兔k机 JSON，以及 330 分片导出的 ZIP。</p>
+              <div class="file-row">
+                <label class="file-button" for="backup-file">选择文件</label>
+                <input id="backup-file" type="file" accept=".ee,.json,.zip,application/json,application/zip" />
+                <span class="file-name" id="file-name">尚未选择文件</span>
+              </div>
+            </div>
+
+            <div class="step">
+              <span class="step-label">02 转换目标</span>
+              <h2>生成哪种备份</h2>
+              <p class="field-note">生成后请到相应小手机的原生“导入备份”功能中选择下载的文件。</p>
+              <div class="target-list">
+                <label class="target-option">
+                  <input type="radio" name="target" value="ephone" checked />
+                  <span><strong>330 / 兔k机</strong><span>生成 330 兼容的 v3 JSON</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="octopus" />
+                  <span><strong>章鱼机</strong><span>生成可导入的 `.ee` Gzip 备份</span></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="step">
+              <span class="step-label">03 转换与下载</span>
+              <h2>保护现有数据</h2>
+              <p class="field-note">目标小手机导入时会覆盖数据。请先保留目标端当前的原始备份，再进行导入。</p>
+              <div class="actions">
+                <button id="convert-button" class="primary" type="button" disabled>转换备份</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="result" class="surface result" aria-live="polite">
+          <div class="result-top">
+            <div>
+              <h2 id="result-title">转换完成</h2>
+              <p id="result-summary" class="success"></p>
+            </div>
+            <a id="download-link" class="download" href="#" download>下载转换后的备份</a>
+          </div>
+          <div class="report">
+            <div class="stat"><span>识别来源</span><strong id="source-format">-</strong></div>
+            <div class="stat"><span>私聊角色</span><strong id="character-count">0</strong></div>
+            <div class="stat"><span>群聊</span><strong id="group-count">0</strong></div>
+            <div class="stat"><span>消息</span><strong id="message-count">0</strong></div>
+          </div>
+          <div id="result-notice" class="notice"></div>
+          <div id="result-details" class="details"></div>
+        </section>
+
+        <footer>转换器不会访问网络，也不会读取三个小手机页面的本地数据库。只会处理你手动选择的文件。</footer>
+      </main>
+    </div>
+
+    <script>
+      const fileInput = document.getElementById("backup-file");
+      const fileName = document.getElementById("file-name");
+      const convertButton = document.getElementById("convert-button");
+      const result = document.getElementById("result");
+      const downloadLink = document.getElementById("download-link");
+      let selectedFile = null;
+      let previousObjectUrl = null;
+
+      fileInput.addEventListener("change", () => {
+        selectedFile = fileInput.files[0] || null;
+        fileName.textContent = selectedFile ? selectedFile.name : "尚未选择文件";
+        convertButton.disabled = !selectedFile;
+        result.classList.remove("visible");
+      });
+
+      function isOctopusBackup(data) {
+        return data && data._exportVersion && (Array.isArray(data.characters) || Array.isArray(data.groups));
+      }
+
+      function isEphoneBackup(data) {
+        return data && (
+          (data.version === 3 && data.data && typeof data.data === "object") ||
+          Array.isArray(data.chats) ||
+          (data.type === "EPhoneChunkedBackup" && data.data)
+        );
+      }
+
+      function hasEphoneTables(data) {
+        return data && typeof data === "object" && [
+          "chats", "worldBooks", "userStickers", "apiConfig", "globalSettings",
+          "memories", "qzonePosts", "callRecords",
+        ].some((key) => data[key] !== undefined);
+      }
+
+      async function decompressZipEntry(bytes, method) {
+        if (method === 0) return bytes;
+        if (method !== 8) throw new Error(`ZIP 内含不支持的压缩方式 (${method})。`);
+        if (!("DecompressionStream" in window)) {
+          throw new Error("当前浏览器不支持 ZIP 解压，请使用新版 Chrome 或 Edge 打开此页面。");
+        }
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      }
+
+      async function readZipEntries(file) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const endSignature = 0x06054b50;
+        let endOffset = -1;
+        for (let index = bytes.length - 22; index >= Math.max(0, bytes.length - 65557); index -= 1) {
+          if (view.getUint32(index, true) === endSignature) {
+            endOffset = index;
+            break;
+          }
+        }
+        if (endOffset < 0) throw new Error("不是可读取的 ZIP 文件，或 ZIP 文件已损坏。");
+
+        const entryCount = view.getUint16(endOffset + 10, true);
+        let directoryOffset = view.getUint32(endOffset + 16, true);
+        const decoder = new TextDecoder("utf-8");
+        const entries = [];
+
+        for (let entry = 0; entry < entryCount; entry += 1) {
+          if (view.getUint32(directoryOffset, true) !== 0x02014b50) {
+            throw new Error("ZIP 目录数据不完整，无法读取分片备份。");
+          }
+          const method = view.getUint16(directoryOffset + 10, true);
+          const compressedSize = view.getUint32(directoryOffset + 20, true);
+          const nameLength = view.getUint16(directoryOffset + 28, true);
+          const extraLength = view.getUint16(directoryOffset + 30, true);
+          const commentLength = view.getUint16(directoryOffset + 32, true);
+          const localOffset = view.getUint32(directoryOffset + 42, true);
+          const name = decoder.decode(bytes.slice(directoryOffset + 46, directoryOffset + 46 + nameLength));
+
+          if (view.getUint32(localOffset, true) !== 0x04034b50) {
+            throw new Error(`ZIP 中的 ${name || "文件"} 无法读取。`);
+          }
+          const localNameLength = view.getUint16(localOffset + 26, true);
+          const localExtraLength = view.getUint16(localOffset + 28, true);
+          const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+          const compressed = bytes.slice(dataStart, dataStart + compressedSize);
+          if (!name.endsWith("/")) {
+            entries.push({ name, bytes: await decompressZipEntry(compressed, method) });
+          }
+          directoryOffset += 46 + nameLength + extraLength + commentLength;
+        }
+        return entries;
+      }
+
+      function mergeEphoneFragments(fragments) {
+        const output = { version: 3, timestamp: Date.now(), data: {} };
+        for (const fragment of fragments) {
+          let data = sourceData(fragment);
+          if (!hasEphoneTables(data) && hasEphoneTables(fragment.data)) data = fragment.data;
+          for (const [key, value] of Object.entries(data)) {
+            if (["version", "timestamp", "type", "contains", "exportedAt"].includes(key)) continue;
+            if (Array.isArray(value)) {
+              const current = asArray(output.data[key]);
+              const existingIds = new Set(current.map((item) => item && typeof item === "object" ? item.id : undefined));
+              for (const item of value) {
+                const id = item && typeof item === "object" ? item.id : undefined;
+                if (id === undefined || !existingIds.has(id)) {
+                  current.push(item);
+                  if (id !== undefined) existingIds.add(id);
+                }
+              }
+              output.data[key] = current;
+            } else if (value && typeof value === "object") {
+              output.data[key] = { ...(output.data[key] || {}), ...value };
+            } else if (value !== undefined) {
+              output.data[key] = value;
+            }
+          }
+        }
+        return output;
+      }
+
+      async function readZipBackup(file) {
+        const entries = await readZipEntries(file);
+        const decoder = new TextDecoder("utf-8");
+        const fragments = [];
+        for (const entry of entries) {
+          if (!entry.name.toLowerCase().endsWith(".json")) continue;
+          try {
+            const candidate = JSON.parse(decoder.decode(entry.bytes));
+            const data = sourceData(candidate);
+            if (isEphoneBackup(candidate) || hasEphoneTables(data) || hasEphoneTables(candidate.data)) {
+              fragments.push(candidate);
+            }
+          } catch (error) {
+            // ZIP 中可能包含说明或非备份 JSON；仅跳过此类文件。
+          }
+        }
+        if (!fragments.length) {
+          throw new Error("此 ZIP 内没有找到可识别的 330 分片 JSON。请直接选择 330 的“分片导出”生成的 ZIP 文件。");
+        }
+        return { format: "ephone", sourceLabel: "330 分片备份", data: mergeEphoneFragments(fragments) };
+      }
+
+      async function readBackup(file) {
+        if (file.name.toLowerCase().endsWith(".zip")) return readZipBackup(file);
+        const isEeFile = file.name.toLowerCase().endsWith(".ee");
+        let text;
+
+        if (isEeFile) {
+          if (!("DecompressionStream" in window)) {
+            throw new Error("当前浏览器不支持 .ee 解压，请使用新版 Chrome 或 Edge 打开此页面。");
+          }
+          try {
+            const stream = file.stream().pipeThrough(new DecompressionStream("gzip"));
+            text = await new Response(stream).text();
+          } catch (error) {
+            throw new Error("无法解压 .ee 文件。请确认它是章鱼机导出的完整备份。" );
+          }
+        } else {
+          text = await file.text();
+        }
+
+        try {
+          const data = JSON.parse(text);
+          if (isOctopusBackup(data)) return { format: "octopus", sourceLabel: "章鱼机", data };
+          if (isEphoneBackup(data)) return { format: "ephone", sourceLabel: "330 / 兔k机", data };
+        } catch (error) {
+          throw new Error("文件不是有效的 JSON 备份，或文件内容已损坏。");
+        }
+        throw new Error("未识别此备份格式。请选择章鱼机 .ee、330/兔k机 JSON，或 330 分片导出的 ZIP。 ");
+      }
+
+      function sourceData(data) {
+        if (data.type === "EPhoneChunkedBackup") return data.data || {};
+        return data.version === 3 && data.data ? data.data : data;
+      }
+
+      function valueOr(object, keys, fallback = "") {
+        for (const key of keys) {
+          if (object && object[key] !== undefined && object[key] !== null && object[key] !== "") return object[key];
+        }
+        return fallback;
+      }
+
+      function asArray(value) {
+        return Array.isArray(value) ? value : [];
+      }
+
+      function asTimestamp(value) {
+        if (typeof value === "number") return value;
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? Date.now() : parsed;
+      }
+
+      function normalizeMessages(messages) {
+        return asArray(messages).map((message, index) => {
+          if (!message || typeof message !== "object") {
+            return { role: "assistant", content: String(message || ""), timestamp: Date.now() + index };
+          }
+          return {
+            ...message,
+            role: valueOr(message, ["role", "sender"], "assistant"),
+            content: valueOr(message, ["content", "text", "message"], ""),
+            timestamp: asTimestamp(message.timestamp || message.time || Date.now() + index),
+          };
+        });
+      }
+
+      function toEphoneChat(item, isGroup) {
+        const settings = item.settings || {};
+        const aiPersona = valueOr(item, ["persona", "description"], valueOr(settings, ["aiPersona", "ai-persona"], ""));
+        const myPersona = valueOr(item, ["myPersona"], valueOr(settings, ["myPersona", "my-persona"], ""));
+        const aiAvatar = valueOr(item, ["avatar"], valueOr(settings, ["aiAvatar", "ai-avatar"], ""));
+        const myAvatar = valueOr(item, ["myAvatar"], valueOr(settings, ["myAvatar", "my-avatar"], ""));
+        const idPrefix = isGroup ? "group" : "chat";
+        const id = item.id || `${idPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const ephoneSettings = {
+          ...settings,
+          aiPersona,
+          myPersona,
+          aiAvatar,
+          myAvatar,
+          "ai-persona": aiPersona,
+          "my-persona": myPersona,
+          "ai-avatar": aiAvatar,
+          "my-avatar": myAvatar,
+          maxMemory: valueOr(item, ["maxMemory"], settings.maxMemory || 10),
+          linkedWorldBookIds: item.worldBookIds || settings.linkedWorldBookIds || [],
+        };
+        return {
+          id,
+          name: valueOr(item, ["name", "remarkName", "realName"], "未命名聊天"),
+          isGroup,
+          isPinned: Boolean(item.isPinned),
+          history: normalizeMessages(item.history),
+          unreadCount: Number(item.unreadCount || 0),
+          avatar: aiAvatar,
+          members: isGroup ? asArray(item.members) : undefined,
+          settings: ephoneSettings,
+        };
+      }
+
+      function octopusCharacterFromChat(chat) {
+        const settings = chat.settings || {};
+        return {
+          id: chat.id || `char_${Date.now()}`,
+          realName: valueOr(chat, ["realName", "name"], "未命名角色"),
+          remarkName: valueOr(chat, ["remarkName", "name"], "未命名角色"),
+          persona: valueOr(settings, ["aiPersona", "ai-persona"], chat.persona || ""),
+          avatar: valueOr(chat, ["avatar"], valueOr(settings, ["aiAvatar", "ai-avatar"], "")),
+          myName: valueOr(chat, ["myName"], "我"),
+          myPersona: valueOr(settings, ["myPersona", "my-persona"], chat.myPersona || ""),
+          myAvatar: valueOr(settings, ["myAvatar", "my-avatar"], chat.myAvatar || ""),
+          theme: chat.theme || "white_pink",
+          maxMemory: Number(settings.maxMemory || chat.maxMemory || 10),
+          chatBg: chat.chatBg || settings.background || "",
+          history: normalizeMessages(chat.history),
+          isPinned: Boolean(chat.isPinned),
+          status: typeof chat.status === "string" ? chat.status : "在线",
+          worldBookIds: chat.worldBookIds || settings.linkedWorldBookIds || [],
+          useCustomBubbleCss: Boolean(chat.useCustomBubbleCss),
+          customBubbleCss: chat.customBubbleCss || "",
+        };
+      }
+
+      function octopusGroupFromChat(chat) {
+        const settings = chat.settings || {};
+        return {
+          id: chat.id || `group_${Date.now()}`,
+          name: chat.name || "未命名群聊",
+          avatar: valueOr(chat, ["avatar"], valueOr(settings, ["aiAvatar", "ai-avatar"], "")),
+          me: chat.me || { nickname: "我", persona: "", avatar: valueOr(settings, ["myAvatar", "my-avatar"], "") },
+          members: asArray(chat.members),
+          theme: chat.theme || "white_pink",
+          maxMemory: Number(settings.maxMemory || chat.maxMemory || 10),
+          chatBg: chat.chatBg || settings.background || "",
+          history: normalizeMessages(chat.history),
+          isPinned: Boolean(chat.isPinned),
+          useCustomBubbleCss: Boolean(chat.useCustomBubbleCss),
+          customBubbleCss: chat.customBubbleCss || "",
+          worldBookIds: chat.worldBookIds || settings.linkedWorldBookIds || [],
+        };
+      }
+
+      function worldBooksForEphone(worldBooks) {
+        return asArray(worldBooks).map((book) => {
+          if (!Array.isArray(book.content)) return { ...book };
+          return {
+            ...book,
+            content: book.content.map((entry) => ({
+              keys: asArray(entry.keys).length ? entry.keys : [book.name || "世界书"],
+              comment: entry.comment || "从章鱼机导入",
+              content: entry.content || "",
+              enabled: entry.enabled !== false,
+            })),
+          };
+        });
+      }
+
+      function worldBooksForOctopus(worldBooks) {
+        return asArray(worldBooks).map((book) => {
+          if (!Array.isArray(book.content)) return { ...book };
+          const content = book.content.map((entry) => {
+            const notes = [];
+            if (entry.comment) notes.push(`[备注: ${entry.comment}]`);
+            if (asArray(entry.keys).length) notes.push(`[关键词: ${entry.keys.join(", ")}]`);
+            notes.push(entry.content || "");
+            return notes.join("\n");
+          }).join("\n\n");
+          return { ...book, content };
+        });
+      }
+
+      function toEphoneCompatible(sourceFormat, rawData) {
+        if (sourceFormat === "ephone") {
+          const data = sourceData(rawData);
+          const chats = asArray(data.chats).map((chat) => ({ ...chat, history: normalizeMessages(chat.history) }));
+          return {
+            version: 3,
+            timestamp: Date.now(),
+            data: {
+              ...data,
+              chats,
+              worldBooks: worldBooksForEphone(data.worldBooks),
+            },
+          };
+        }
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats: [
+              ...asArray(rawData.characters).map((character) => toEphoneChat(character, false)),
+              ...asArray(rawData.groups).map((group) => toEphoneChat(group, true)),
+            ],
+            worldBooks: worldBooksForEphone(rawData.worldBooks),
+            userStickers: asArray(rawData.myStickers),
+            apiConfig: rawData.apiSettings ? [rawData.apiSettings] : [],
+            globalSettings: rawData.globalSettings ? [rawData.globalSettings] : [],
+          },
+        };
+      }
+
+      function toOctopusBackup(sourceFormat, rawData) {
+        if (sourceFormat === "octopus") {
+          return { ...rawData, _exportVersion: "2.0", _exportTimestamp: Date.now(), _optimizedStorage: true };
+        }
+        const data = sourceData(rawData);
+        const chats = asArray(data.chats);
+        const apiConfig = asArray(data.apiConfig)[0] || {};
+        const globalSettings = asArray(data.globalSettings)[0] || {};
+        return {
+          apiSettings: apiConfig,
+          wallpaper: data.wallpaper || globalSettings.wallpaper || "",
+          myStickers: asArray(data.userStickers),
+          homeScreenMode: data.homeScreenMode || "night",
+          worldBooks: worldBooksForOctopus(data.worldBooks),
+          fontUrl: data.fontUrl || "",
+          customIcons: data.customIcons || {},
+          characters: chats.filter((chat) => !chat.isGroup).map(octopusCharacterFromChat),
+          groups: chats.filter((chat) => chat.isGroup).map(octopusGroupFromChat),
+          _exportVersion: "2.0",
+          _exportTimestamp: Date.now(),
+          _optimizedStorage: true,
+        };
+      }
+
+      function collectStats(format, data) {
+        if (format === "octopus") {
+          const characters = asArray(data.characters);
+          const groups = asArray(data.groups);
+          return {
+            characters: characters.length,
+            groups: groups.length,
+            messages: [...characters, ...groups].reduce((total, item) => total + asArray(item.history).length, 0),
+            worldBooks: asArray(data.worldBooks).length,
+          };
+        }
+        const source = sourceData(data);
+        const chats = asArray(source.chats);
+        return {
+          characters: chats.filter((chat) => !chat.isGroup).length,
+          groups: chats.filter((chat) => chat.isGroup).length,
+          messages: chats.reduce((total, chat) => total + asArray(chat.history).length, 0),
+          worldBooks: asArray(source.worldBooks).length,
+        };
+      }
+
+      async function gzipJson(data) {
+        if (!("CompressionStream" in window)) {
+          throw new Error("当前浏览器不支持 .ee 压缩，请使用新版 Chrome 或 Edge 打开此页面。");
+        }
+        const source = new Blob([JSON.stringify(data)], { type: "application/json" });
+        return new Response(source.stream().pipeThrough(new CompressionStream("gzip"))).blob();
+      }
+
+      function showError(message) {
+        result.classList.add("visible");
+        document.getElementById("result-title").textContent = "无法转换";
+        document.getElementById("result-summary").textContent = "请检查文件后重试。";
+        document.getElementById("source-format").textContent = "-";
+        document.getElementById("character-count").textContent = "-";
+        document.getElementById("group-count").textContent = "-";
+        document.getElementById("message-count").textContent = "-";
+        const notice = document.getElementById("result-notice");
+        notice.className = "notice error";
+        notice.textContent = message;
+        document.getElementById("result-details").textContent = "";
+        downloadLink.style.display = "none";
+      }
+
+      function showSuccess(sourceLabel, target, stats, blob, filename) {
+        if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
+        previousObjectUrl = URL.createObjectURL(blob);
+        result.classList.add("visible");
+        document.getElementById("result-title").textContent = "转换完成";
+        document.getElementById("result-summary").textContent = `已生成可导入 ${target} 的备份文件。`;
+        document.getElementById("source-format").textContent = sourceLabel;
+        document.getElementById("character-count").textContent = String(stats.characters);
+        document.getElementById("group-count").textContent = String(stats.groups);
+        document.getElementById("message-count").textContent = String(stats.messages);
+        const notice = document.getElementById("result-notice");
+        notice.className = "notice";
+        notice.textContent = "请先在目标小手机内导出一份当前备份。导入转换文件会覆盖目标端的现有数据。";
+        document.getElementById("result-details").textContent = `同时处理世界书 ${stats.worldBooks} 本。\n只转换已确认的通用数据：角色、群聊、消息、世界书、头像与基础设置。目标程序专有的功能数据可能不会显示。`;
+        downloadLink.href = previousObjectUrl;
+        downloadLink.download = filename;
+        downloadLink.style.display = "inline-flex";
+      }
+
+      convertButton.addEventListener("click", async () => {
+        if (!selectedFile) return;
+        convertButton.disabled = true;
+        convertButton.textContent = "正在转换...";
+        try {
+          const source = await readBackup(selectedFile);
+          const target = document.querySelector('input[name="target"]:checked').value;
+          const stats = collectStats(source.format, source.data);
+          const date = new Date().toISOString().slice(0, 10);
+          if (target === "ephone") {
+            const output = toEphoneCompatible(source.format, source.data);
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+            showSuccess(source.sourceLabel, "330 / 兔k机", stats, blob, `EPhone-Compatible-Backup-v330-${date}.json`);
+          } else {
+            const output = toOctopusBackup(source.format, source.data);
+            const blob = await gzipJson(output);
+            showSuccess(source.sourceLabel, "章鱼机", stats, blob, `章鱼机_转换备份_${date}.ee`);
+          }
+        } catch (error) {
+          console.error(error);
+          showError(error.message || "转换时发生未知错误。");
+        } finally {
+          convertButton.disabled = !selectedFile;
+          convertButton.textContent = "转换备份";
+        }
+      });
+    </script>
+  </body>
+</html>
