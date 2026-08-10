@@ -7,14 +7,12 @@
 - 章鱼机导出的 `.ee` 完整备份。
 - 330 或兔k机导出的 JSON 完整备份、330 兼容 JSON、分块备份 JSON。
 - 330 的“分片导出（推荐，打包为 ZIP）”生成的 `EPhone-Sliced-Backup-*.zip`。选择 ZIP 文件本身，不需要手动解压。
-- Perigee 小手机导出的 `perigee-os-full-*.json` 或选择性 JSON 备份。
 - zz 小手机导出的 `iphone-sim-config.json`，或包含该 JSON 的 `iphone-sim-config.zip`。
 
 输出规则：
 
 - 目标为“330 / 兔k机”时生成 `version: 3` 的 330 兼容 JSON。可在兔k机的“从 330 格式导入”中导入，或在 330 的原生备份导入中导入。
 - 目标为“章鱼机”时生成 Gzip 压缩的 `.ee` 文件，可在章鱼机的“导入数据”中导入。
-- 目标为“Perigee 小手机”时生成 Perigee 原生 JSON，可在设置中的“数据导入”中导入。
 - 目标为“zz 小手机”时生成 zz 原生 JSON，可在设置中的“导入 JSON”中导入。
 
 转换只在浏览器中进行，不会上传文件。目标小手机导入备份会覆盖当前数据，请在导入前先保留目标端的原始备份。
@@ -26,4 +24,4 @@
 2.点击网址：https://nikonotnicotine.github.io/MiniPhoneConverter/
 3.上传备份 --> 选择转换到哪个小手机 ---> 开始转换 ---> 下载
 
-v1.1 增加了PerigeeOS和ZZ小手机的互通 
+v1.1 增加了 ZZ 小手机的互通
