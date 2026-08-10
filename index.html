@@ -94,7 +94,7 @@
       <header>
         <div>
           <h1>小手机备份转换器</h1>
-          <p class="subtitle">在 330、兔k机和章鱼机之间转换备份。所有处理都在当前浏览器中完成。</p>
+          <p class="subtitle">在 330、兔k机、章鱼机、zz 与两种糯米机之间转换备份。所有处理都在当前浏览器中完成。</p>
         </div>
         <div class="local-mark">本地离线处理</div>
       </header>
@@ -105,7 +105,7 @@
             <div class="step">
               <span class="step-label">01 选择备份</span>
               <h2>导入源文件</h2>
-              <p class="field-note">支持章鱼机 `.ee`、330/兔k机和 zz 的 JSON，以及 330/zz 的 ZIP 备份。</p>
+              <p class="field-note">支持章鱼机 `.ee`，330/兔k机、zz、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
               <div class="file-row">
                 <label class="file-button" for="backup-file">选择文件</label>
                 <input id="backup-file" type="file" accept=".ee,.json,.zip,application/json,application/zip" />
@@ -129,6 +129,14 @@
                 <label class="target-option">
                   <input type="radio" name="target" value="zz" />
                   <span><strong>zz 小手机</strong><span>生成 zz 原生 JSON 备份</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="sully-hand" />
+                  <span><strong>手抓糯米机</strong><span>生成可原生导入的 SullyOS v3 JSON</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="sully-csy" />
+                  <span><strong>csy 糯米机</strong><span>生成可原生导入的 SullyOS v2 JSON</span></span>
                 </label>
               </div>
             </div>
@@ -162,7 +170,7 @@
           <div id="result-details" class="details"></div>
         </section>
 
-        <footer>转换器不会访问网络，也不会读取三个小手机页面的本地数据库。只会处理你手动选择的文件。</footer>
+        <footer>转换器不会访问网络，也不会读取任何小手机页面的本地数据库。只会处理你手动选择的文件。</footer>
       </main>
     </div>
 
@@ -196,6 +204,23 @@
 
       function isZzBackup(data) {
         return Boolean(data && Array.isArray(data.contacts) && data.chatHistory && typeof data.chatHistory === "object");
+      }
+
+      function isSullyBackup(data) {
+        return Boolean(data && typeof data === "object" && !Array.isArray(data) &&
+          typeof data.version === "number" && (typeof data.timestamp === "number" || data.timestamp === undefined) &&
+          (Array.isArray(data.characters) || Array.isArray(data.messages) || Array.isArray(data.worldbooks)) &&
+          !data._exportVersion && !Array.isArray(data.chats));
+      }
+
+      function sullySource(data) {
+        const isHandVersion = Number(data?.version || 0) >= 3 || [
+          "memoryNodes", "memoryVectors", "memoryLinks", "memoryPalaceConfig",
+          "characterGroups", "storyTheaters", "appearancePresets",
+        ].some((key) => data?.[key] !== undefined);
+        return isHandVersion
+          ? { format: "sully-hand", sourceLabel: "手抓糯米机" }
+          : { format: "sully-csy", sourceLabel: "csy 糯米机" };
       }
 
       function hasEphoneTables(data) {
@@ -260,6 +285,115 @@
         return entries;
       }
 
+      function zipEntryMap(entries) {
+        return new Map(entries.map((entry) => [entry.name.replace(/\\/g, "/"), entry.bytes]));
+      }
+
+      function parseZipJson(entryMap, name, missingMessage) {
+        const bytes = entryMap.get(name);
+        if (!bytes) throw new Error(missingMessage || `ZIP 中缺少 ${name}。`);
+        try {
+          return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+        } catch (error) {
+          throw new Error(`ZIP 中的 ${name} 不是有效 JSON。`);
+        }
+      }
+
+      function bytesToBase64(bytes) {
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let index = 0; index < bytes.length; index += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+        }
+        return btoa(binary);
+      }
+
+      function assetMime(path) {
+        const ext = path.split(".").pop()?.toLowerCase();
+        if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+        if (ext === "gif") return "image/gif";
+        if (ext === "webp") return "image/webp";
+        if (ext === "svg") return "image/svg+xml";
+        return "image/png";
+      }
+
+      function restoreZipAssets(root, entryMap) {
+        const cache = new Map();
+        const seen = new WeakSet();
+        const visit = (value) => {
+          if (typeof value === "string" && value.startsWith("assets/")) {
+            if (cache.has(value)) return cache.get(value);
+            const bytes = entryMap.get(value);
+            if (!bytes) return value;
+            const dataUrl = `data:${assetMime(value)};base64,${bytesToBase64(bytes)}`;
+            cache.set(value, dataUrl);
+            return dataUrl;
+          }
+          if (!value || typeof value !== "object" || seen.has(value)) return value;
+          seen.add(value);
+          if (Array.isArray(value)) {
+            for (let index = 0; index < value.length; index += 1) value[index] = visit(value[index]);
+          } else {
+            for (const key of Object.keys(value)) value[key] = visit(value[key]);
+          }
+          return value;
+        };
+        return visit(root);
+      }
+
+      function assembleSullyV2(entryMap) {
+        const manifest = parseZipJson(entryMap, "manifest.json", "损坏的手抓糯米机备份：缺少 manifest.json。");
+        if (manifest.formatVersion !== 2 || !manifest.stores || typeof manifest.stores !== "object") {
+          throw new Error(`不支持的手抓糯米机分片备份版本：${manifest.formatVersion ?? "未知"}。`);
+        }
+        const data = parseZipJson(entryMap, "metadata.json", "损坏的手抓糯米机备份：缺少 metadata.json。");
+        for (const [field, info] of Object.entries(manifest.stores)) {
+          const records = [];
+          const parts = Number(info?.parts || 0);
+          for (let part = 0; part < parts; part += 1) {
+            const name = `stores/${field}.${String(part).padStart(3, "0")}.json`;
+            const chunk = parseZipJson(entryMap, name, `损坏的手抓糯米机备份：缺少 ${name}。`);
+            if (!Array.isArray(chunk)) throw new Error(`损坏的手抓糯米机备份：${name} 不是数组。`);
+            records.push(...chunk);
+          }
+          if (Number.isFinite(Number(info?.count)) && records.length !== Number(info.count)) {
+            throw new Error(`损坏的手抓糯米机备份：${field} 的分片条数与 manifest 不一致。`);
+          }
+          data[field] = records;
+        }
+        if (manifest.vectors) {
+          const index = parseZipJson(entryMap, "stores/memory_vectors.index.json",
+            "损坏的手抓糯米机备份：缺少 memory_vectors.index.json。");
+          const bin = entryMap.get("stores/memory_vectors.bin");
+          if (!bin || !Array.isArray(index) || index.length !== Number(manifest.vectors.count)) {
+            throw new Error("损坏的手抓糯米机备份：记忆向量索引或二进制数据不完整。");
+          }
+          const view = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+          data.memoryVectors = index.map((entry) => {
+            const byteOffset = Number(entry.byteOffset);
+            const byteLength = Number(entry.byteLength);
+            const dimensions = Number(entry.dimensions);
+            if (!Number.isSafeInteger(byteOffset) || !Number.isSafeInteger(byteLength) ||
+                !Number.isSafeInteger(dimensions) || byteOffset < 0 || byteLength !== dimensions * 4 ||
+                byteOffset + byteLength > bin.byteLength) {
+              throw new Error(`损坏的手抓糯米机备份：向量 ${entry.memoryId || "未知"} 的范围无效。`);
+            }
+            const vector = new Array(dimensions);
+            for (let index = 0; index < dimensions; index += 1) {
+              vector[index] = view.getFloat32(byteOffset + index * 4, true);
+            }
+            return {
+              memoryId: entry.memoryId,
+              charId: entry.charId,
+              dimensions,
+              model: entry.model,
+              vector,
+            };
+          });
+        }
+        return restoreZipAssets(data, entryMap);
+      }
+
       function mergeEphoneFragments(fragments) {
         const output = { version: 3, timestamp: Date.now(), data: {} };
         for (const fragment of fragments) {
@@ -290,12 +424,32 @@
 
       async function readZipBackup(file) {
         const entries = await readZipEntries(file);
+        const entryMap = zipEntryMap(entries);
         const decoder = new TextDecoder("utf-8");
         const fragments = [];
+
+        if (entryMap.has("manifest.json") && entryMap.has("metadata.json")) {
+          const manifest = parseZipJson(entryMap, "manifest.json");
+          if (manifest && typeof manifest.stores === "object" && manifest.stores) {
+            const data = assembleSullyV2(entryMap);
+            if (!isSullyBackup(data)) throw new Error("此分片 ZIP 不是可识别的手抓糯米机备份。");
+            return { ...sullySource(data), data };
+          }
+        }
+
+        if (entryMap.has("data.json")) {
+          const data = restoreZipAssets(parseZipJson(entryMap, "data.json"), entryMap);
+          if (isSullyBackup(data)) return { ...sullySource(data), data };
+        }
+
         for (const entry of entries) {
           if (!entry.name.toLowerCase().endsWith(".json")) continue;
           try {
             const candidate = JSON.parse(decoder.decode(entry.bytes));
+            if (isSullyBackup(candidate)) {
+              const data = restoreZipAssets(candidate, entryMap);
+              return { ...sullySource(data), data };
+            }
             if (isZzBackup(candidate)) {
               return { format: "zz", sourceLabel: "zz 小手机", data: candidate };
             }
@@ -308,7 +462,7 @@
           }
         }
         if (!fragments.length) {
-          throw new Error("此 ZIP 内没有找到可识别的 330 分片 JSON。请直接选择 330 的“分片导出”生成的 ZIP 文件。");
+          throw new Error("此 ZIP 内没有找到可识别的备份数据。请选择原生导出的 330、zz 或糯米机 ZIP。");
         }
         return { format: "ephone", sourceLabel: "330 分片备份", data: mergeEphoneFragments(fragments) };
       }
@@ -337,10 +491,11 @@
           if (isOctopusBackup(data)) return { format: "octopus", sourceLabel: "章鱼机", data };
           if (isZzBackup(data)) return { format: "zz", sourceLabel: "zz 小手机", data };
           if (isEphoneBackup(data)) return { format: "ephone", sourceLabel: "330 / 兔k机", data };
+          if (isSullyBackup(data)) return { ...sullySource(data), data };
         } catch (error) {
           throw new Error("文件不是有效的 JSON 备份，或文件内容已损坏。");
         }
-        throw new Error("未识别此备份格式。请选择章鱼机 .ee、330/兔k机或 zz 的备份文件。 ");
+        throw new Error("未识别此备份格式。请选择章鱼机、330/兔k机、zz 或糯米机的原生备份文件。");
       }
 
       function sourceData(data) {
@@ -517,6 +672,42 @@
         };
       }
 
+      function sullyToEphone(rawData) {
+        const messages = asArray(rawData.messages);
+        const toWorldBook = (book, index) => ({
+          id: book.id || `sully_wb_${index}`,
+          name: book.title || book.name || `世界书 ${index + 1}`,
+          content: [{
+            keys: asArray(book.key || book.keys),
+            comment: book.category || book.title || "从糯米机导入",
+            content: typeof book.content === "string" ? book.content : JSON.stringify(book.content || ""),
+            enabled: book.disable !== true && book.enabled !== false,
+          }],
+        });
+        const privateChats = asArray(rawData.characters).map((character) => toEphoneChat({
+          ...character,
+          persona: character.systemPrompt || character.description || "",
+          history: messages.filter((message) => !message.groupId && String(message.charId) === String(character.id)),
+        }, false));
+        const groupChats = asArray(rawData.groups).map((group) => toEphoneChat({
+          ...group,
+          history: messages.filter((message) => String(message.groupId || "") === String(group.id)),
+        }, true));
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats: [...privateChats, ...groupChats],
+            worldBooks: asArray(rawData.worldbooks).map(toWorldBook),
+            userStickers: asArray(rawData.savedEmojis),
+            apiConfig: rawData.apiConfig ? [rawData.apiConfig] : [],
+            globalSettings: rawData.userProfile ? [rawData.userProfile] : [],
+            customIcons: rawData.customIcons || {},
+            wallpaper: rawData.theme?.wallpaper || "",
+          },
+        };
+      }
+
       function toEphoneCompatible(sourceFormat, rawData) {
         if (sourceFormat === "ephone") {
           const data = sourceData(rawData);
@@ -532,6 +723,7 @@
           };
         }
         if (sourceFormat === "zz") return zzToEphone(rawData);
+        if (sourceFormat === "sully-hand" || sourceFormat === "sully-csy") return sullyToEphone(rawData);
         return {
           version: 3,
           timestamp: Date.now(),
@@ -546,6 +738,199 @@
             globalSettings: rawData.globalSettings ? [rawData.globalSettings] : [],
           },
         };
+      }
+
+      const CSY_BACKUP_FIELDS = new Set([
+        "timestamp", "version", "theme", "apiConfig", "apiPresets", "availableModels",
+        "realtimeConfig", "ttsConfig", "sttConfig", "customIcons", "characters", "groups",
+        "messages", "customThemes", "savedEmojis", "emojiCategories", "savedJournalStickers",
+        "assets", "galleryImages", "userProfile", "diaries", "tasks", "anniversaries",
+        "roomTodos", "roomNotes", "socialPosts", "courses", "games", "worldbooks",
+        "roomCustomAssets", "novels", "bankState", "bankDollhouse", "bankTransactions",
+        "socialAppData", "mediaAssets", "xhsActivities", "xhsStockImages", "vectorMemories",
+        "scheduledMessages", "letters", "extraLocalStorageConfig", "songs", "appearancePresets",
+        "studyApiConfig", "studyTutorPresets", "quizSessions", "guidebookSessions", "lifeSimState",
+      ]);
+
+      function toSullyWorldbooks(worldBooks) {
+        const output = [];
+        asArray(worldBooks).forEach((book, bookIndex) => {
+          const entries = Array.isArray(book.content) ? book.content : [{ content: book.content || "" }];
+          entries.forEach((entry, entryIndex) => {
+            const now = Date.now();
+            const keys = asArray(entry.key || entry.keys);
+            output.push({
+              id: String(entry.id || `${book.id || `book_${bookIndex}`}_${entryIndex}`),
+              title: entry.title || entry.comment || book.name || book.title || `世界书 ${output.length + 1}`,
+              content: typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content || ""),
+              category: entry.category || book.category || "导入世界书",
+              createdAt: asTimestamp(entry.createdAt || book.createdAt || now),
+              updatedAt: asTimestamp(entry.updatedAt || book.updatedAt || now),
+              key: keys,
+              constant: keys.length === 0,
+              disable: entry.enabled === false || entry.disable === true,
+            });
+          });
+        });
+        return output;
+      }
+
+      function sullyMessageType(message) {
+        const supported = new Set([
+          "text", "image", "emoji", "voice", "interaction", "transfer", "system",
+          "social_card", "chat_forward", "xhs_card", "moments", "call_log",
+        ]);
+        if (supported.has(message.type)) return message.type;
+        const content = valueOr(message, ["content", "text", "message"], "");
+        if (typeof content === "string" && content.startsWith("data:image/")) return "image";
+        return "text";
+      }
+
+      function toSullyBackup(target, sourceFormat, rawData) {
+        let output;
+        if (sourceFormat === "sully-hand" || sourceFormat === "sully-csy") {
+          output = { ...rawData };
+        } else {
+          const data = toEphoneCompatible(sourceFormat, rawData).data;
+          const chats = asArray(data.chats);
+          const privateChats = chats.filter((chat) => !chat.isGroup);
+          const groupChats = chats.filter((chat) => chat.isGroup);
+          const charactersById = new Map();
+
+          const addCharacter = (source, fallbackId) => {
+            if (!source || typeof source !== "object") return;
+            const settings = source.settings || {};
+            const id = String(source.originalCharId || source.id || fallbackId || `char_${charactersById.size + 1}`);
+            if (charactersById.has(id)) return;
+            const persona = valueOr(source, ["systemPrompt", "persona", "description"],
+              valueOr(settings, ["aiPersona", "ai-persona"], ""));
+            charactersById.set(id, {
+              ...source,
+              id,
+              name: valueOr(source, ["name", "remarkName", "realName", "nickname"], `角色 ${charactersById.size + 1}`),
+              avatar: valueOr(source, ["avatar"], valueOr(settings, ["aiAvatar", "ai-avatar"], "")),
+              description: valueOr(source, ["description", "persona"], persona),
+              systemPrompt: persona,
+              worldview: valueOr(source, ["worldview"], ""),
+              memories: asArray(source.memories),
+            });
+          };
+
+          privateChats.forEach((chat, index) => addCharacter(chat, `char_${index + 1}`));
+          groupChats.forEach((chat) => asArray(chat.members).forEach((member, index) => {
+            if (member && typeof member === "object") addCharacter(member, `${chat.id}_member_${index + 1}`);
+          }));
+
+          const groups = groupChats.map((chat, index) => {
+            const members = asArray(chat.members).map((member) => {
+              if (member && typeof member === "object") return String(member.originalCharId || member.id || "");
+              return String(member || "");
+            }).filter(Boolean);
+            return {
+              id: String(chat.id || `group_${index + 1}`),
+              name: chat.name || `群聊 ${index + 1}`,
+              members,
+              avatar: chat.avatar || "",
+              createdAt: asTimestamp(chat.createdAt || Date.now()),
+            };
+          });
+
+          const messages = [];
+          const pushHistory = (chat, isGroup) => {
+            const history = normalizeMessages(chat.history);
+            const idMap = new Map();
+            const start = messages.length;
+            history.forEach((message, index) => idMap.set(message.id, start + index + 1));
+            const group = isGroup ? groups.find((item) => item.id === String(chat.id)) : undefined;
+            history.forEach((message, index) => {
+              const role = message.role === "user" || message.sender === "user" || message.sender === "me"
+                ? "user" : message.role === "system" ? "system" : "assistant";
+              const rawSender = message.charId || message.senderId || message.memberId || message.authorId;
+              const senderId = rawSender && typeof rawSender === "object" ? rawSender.id : rawSender;
+              const groupMemberId = isGroup && role !== "user" ? (() => {
+                if (senderId) return String(senderId);
+                const senderName = valueOr(message, ["senderName", "authorName", "name", "sender"], "");
+                if (senderName) {
+                  const named = Array.from(charactersById.values()).find((character) => character.name === senderName);
+                  if (named && group?.members.includes(named.id)) return named.id;
+                }
+                return group?.members[0] || String(chat.id);
+              })() : "user";
+              const content = valueOr(message, ["content", "text", "message"], "");
+              const converted = {
+                ...message,
+                id: start + index + 1,
+                charId: isGroup
+                  ? groupMemberId
+                  : String(chat.id),
+                groupId: isGroup ? String(chat.id) : undefined,
+                role,
+                type: sullyMessageType(message),
+                content: typeof content === "string" ? content : JSON.stringify(content),
+                timestamp: asTimestamp(message.timestamp || message.time || Date.now() + index),
+              };
+              if (message.replyTo?.id !== undefined && idMap.has(message.replyTo.id)) {
+                converted.replyTo = { ...message.replyTo, id: idMap.get(message.replyTo.id) };
+              }
+              messages.push(converted);
+            });
+          };
+          privateChats.forEach((chat) => pushHistory(chat, false));
+          groupChats.forEach((chat) => pushHistory(chat, true));
+
+          const globalSettings = asArray(data.globalSettings)[0] || {};
+          output = {
+            timestamp: Date.now(),
+            characters: Array.from(charactersById.values()),
+            groups,
+            messages,
+            worldbooks: toSullyWorldbooks(data.worldBooks),
+            savedEmojis: asArray(data.userStickers),
+            apiConfig: asArray(data.apiConfig)[0] || undefined,
+            customIcons: data.customIcons || undefined,
+            theme: (data.wallpaper || globalSettings.wallpaper) ? { wallpaper: data.wallpaper || globalSettings.wallpaper } : undefined,
+            userProfile: globalSettings.name || globalSettings.avatar || globalSettings.bio || globalSettings.desc ? {
+              name: globalSettings.name || "我",
+              avatar: globalSettings.avatar || "",
+              bio: globalSettings.bio || globalSettings.desc || "",
+            } : undefined,
+          };
+        }
+
+        output.timestamp = Date.now();
+        if (target === "sully-hand") {
+          output.version = 3;
+          // 手抓版会在任何数据库写入前明确拒绝这两个 csy 专属顶层字段。
+          delete output.vectorMemories;
+          delete output.extraLocalStorageConfig;
+          return output;
+        }
+
+        output.version = 2;
+        if (Array.isArray(output.messages)) {
+          output.messages = output.messages.map((message) => ({
+            ...message,
+            type: sullyMessageType(message),
+          }));
+        }
+        if (Array.isArray(output.worldbooks)) {
+          output.worldbooks = output.worldbooks.map((book) => {
+            if (typeof book.position !== "number") return book;
+            const { position: _handOnlyPosition, ...compatibleBook } = book;
+            return compatibleBook;
+          });
+        }
+        if (Array.isArray(output.characters)) {
+          output.characters = output.characters.map((character) => ({
+            ...character,
+            mountedWorldbooks: asArray(character.mountedWorldbooks).map((book) => {
+              if (typeof book.position !== "number") return book;
+              const { position: _handOnlyPosition, ...compatibleBook } = book;
+              return compatibleBook;
+            }),
+          }));
+        }
+        return Object.fromEntries(Object.entries(output).filter(([key]) => CSY_BACKUP_FIELDS.has(key)));
       }
 
       function toOctopusBackup(sourceFormat, rawData) {
@@ -649,6 +1034,15 @@
             worldBooks: asArray(data.worldbook).length,
           };
         }
+        if (format === "sully-hand" || format === "sully-csy") {
+          const messages = asArray(data.messages);
+          return {
+            characters: asArray(data.characters).length,
+            groups: asArray(data.groups).length,
+            messages: messages.length,
+            worldBooks: asArray(data.worldbooks).length,
+          };
+        }
         const source = sourceData(data);
         const chats = asArray(source.chats);
         return {
@@ -718,10 +1112,21 @@
             const output = toOctopusBackup(source.format, source.data);
             const blob = await gzipJson(output);
             showSuccess(source.sourceLabel, "章鱼机", stats, blob, `章鱼机_转换备份_${date}.ee`);
-          } else {
+          } else if (target === "zz") {
             const output = toZzBackup(source.format, source.data);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             showSuccess(source.sourceLabel, "zz 小手机", stats, blob, `iphone-sim-config-converted-${date}.json`);
+          } else {
+            const output = toSullyBackup(target, source.format, source.data);
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+            const isHand = target === "sully-hand";
+            showSuccess(
+              source.sourceLabel,
+              isHand ? "手抓糯米机" : "csy 糯米机",
+              stats,
+              blob,
+              `${isHand ? "SullyOS-Hand" : "SullyOS-CSY"}-Converted-Backup-${date}.json`,
+            );
           }
         } catch (error) {
           console.error(error);
