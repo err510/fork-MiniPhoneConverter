@@ -8,12 +8,16 @@
 - 330 或兔k机导出的 JSON 完整备份、330 兼容 JSON、分块备份 JSON。
 - 330 的“分片导出（推荐，打包为 ZIP）”生成的 `EPhone-Sliced-Backup-*.zip`。选择 ZIP 文件本身，不需要手动解压。
 - zz 小手机导出的 `iphone-sim-config.json`，或包含该 JSON 的 `iphone-sim-config.zip`。
+- 手抓糯米机导出的新版分片 ZIP（`manifest.json` + `metadata.json` + `stores/`）、旧版 `data.json` ZIP 或 JSON。
+- csy 糯米机导出的 `data.json` ZIP 或兼容 JSON。ZIP 内的 `assets/` 图片会在转换时自动还原。
 
 输出规则：
 
 - 目标为“330 / 兔k机”时生成 `version: 3` 的 330 兼容 JSON。可在兔k机的“从 330 格式导入”中导入，或在 330 的原生备份导入中导入。
 - 目标为“章鱼机”时生成 Gzip 压缩的 `.ee` 文件，可在章鱼机的“导入数据”中导入。
 - 目标为“zz 小手机”时生成 zz 原生 JSON，可在设置中的“导入 JSON”中导入。
+- 目标为“手抓糯米机”时生成 `version: 3` 的 SullyOS JSON，可在设置中的“导入备份 (.zip / .json)”中导入。
+- 目标为“csy 糯米机”时生成 `version: 2` 的 SullyOS JSON，可在设置中的“导入备份 (.zip / .json)”中导入。
 
 转换只在浏览器中进行，不会上传文件。目标小手机导入备份会覆盖当前数据，请在导入前先保留目标端的原始备份。
 
@@ -24,4 +28,8 @@
 2.点击网址：https://nikonotnicotine.github.io/MiniPhoneConverter/
 3.上传备份 --> 选择转换到哪个小手机 ---> 开始转换 ---> 下载
 
-v1.1 增加了 ZZ 小手机的互通
+版本记录：
+
+- 2026.8.9 v1.1 增加 ZZ 小手机的互通。
+- 2026.8.10 v1.2 增加手抓糯米机、csy 糯米机的输入识别与互相转换，并支持两者原生 ZIP 布局。
+- 2026.8.11 v1.3 修复了手机不能选择.ee后缀的bug
