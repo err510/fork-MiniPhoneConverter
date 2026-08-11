@@ -108,7 +108,9 @@
               <p class="field-note">支持章鱼机 `.ee`，330/兔k机、zz、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
               <div class="file-row">
                 <label class="file-button" for="backup-file">选择文件</label>
-                <input id="backup-file" type="file" accept=".ee,.json,.zip,application/json,application/zip" />
+                <!-- 不设置 accept：部分 Windows/Chromium 文件选择器会把未注册的 .ee 扩展名置灰，
+                     导致章鱼机备份无法选取。文件类型统一交给下方解析逻辑校验。 -->
+                <input id="backup-file" type="file" />
                 <span class="file-name" id="file-name">尚未选择文件</span>
               </div>
             </div>
