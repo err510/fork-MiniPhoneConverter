@@ -94,7 +94,7 @@
       <header>
         <div>
           <h1>小手机备份转换器</h1>
-          <p class="subtitle">在 330、兔k机、章鱼机、zz 与两种糯米机之间转换备份。所有处理都在当前浏览器中完成。</p>
+          <p class="subtitle">在糯叽机、330、兔k机、章鱼机、zz 与两种糯米机之间转换备份。所有处理都在当前浏览器中完成。</p>
         </div>
         <div class="local-mark">本地离线处理</div>
       </header>
@@ -105,7 +105,7 @@
             <div class="step">
               <span class="step-label">01 选择备份</span>
               <h2>导入源文件</h2>
-              <p class="field-note">支持章鱼机 `.ee`，330/兔k机、zz、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
+              <p class="field-note">支持糯叽机 v5、章鱼机 `.ee`，330/兔k机、zz、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
               <div class="file-row">
                 <label class="file-button" for="backup-file">选择文件</label>
                 <!-- 不设置 accept：部分 Windows/Chromium 文件选择器会把未注册的 .ee 扩展名置灰，
@@ -139,6 +139,10 @@
                 <label class="target-option">
                   <input type="radio" name="target" value="sully-csy" />
                   <span><strong>csy 糯米机</strong><span>生成可原生导入的 SullyOS v2 JSON</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="nuojiji" />
+                  <span><strong>糯叽机 v5</strong><span>生成可导入的糯叽机 JSON（通用聊天数据）</span></span>
                 </label>
               </div>
             </div>
@@ -196,6 +200,13 @@
         return data && data._exportVersion && (Array.isArray(data.characters) || Array.isArray(data.groups));
       }
 
+      // 糯叽机 v5 的备份使用外层 data.structuredDB 容器，
+      // 需要先整理为转换器内部使用的通用聊天结构。
+      function isNuojijiBackup(data) {
+        return Boolean(data && data.data && typeof data.data === "object" &&
+          data.data.structuredDB && typeof data.data.structuredDB === "object");
+      }
+
       function isEphoneBackup(data) {
         return data && (
           (data.version === 3 && data.data && typeof data.data === "object") ||
@@ -213,6 +224,10 @@
           typeof data.version === "number" && (typeof data.timestamp === "number" || data.timestamp === undefined) &&
           (Array.isArray(data.characters) || Array.isArray(data.messages) || Array.isArray(data.worldbooks)) &&
           !data._exportVersion && !Array.isArray(data.chats));
+      }
+
+      function nuojijiSource(data) {
+        return { format: "nuojiji", sourceLabel: `糯叽机 v${data?.version || 5}` };
       }
 
       function sullySource(data) {
@@ -441,6 +456,7 @@
 
         if (entryMap.has("data.json")) {
           const data = restoreZipAssets(parseZipJson(entryMap, "data.json"), entryMap);
+          if (isNuojijiBackup(data)) return { ...nuojijiSource(data), data };
           if (isSullyBackup(data)) return { ...sullySource(data), data };
         }
 
@@ -454,6 +470,9 @@
             }
             if (isZzBackup(candidate)) {
               return { format: "zz", sourceLabel: "zz 小手机", data: candidate };
+            }
+            if (isNuojijiBackup(candidate)) {
+              return { ...nuojijiSource(candidate), data: candidate };
             }
             const data = sourceData(candidate);
             if (isEphoneBackup(candidate) || hasEphoneTables(data) || hasEphoneTables(candidate.data)) {
@@ -491,18 +510,305 @@
         try {
           const data = JSON.parse(text);
           if (isOctopusBackup(data)) return { format: "octopus", sourceLabel: "章鱼机", data };
+          if (isNuojijiBackup(data)) return { ...nuojijiSource(data), data };
           if (isZzBackup(data)) return { format: "zz", sourceLabel: "zz 小手机", data };
           if (isEphoneBackup(data)) return { format: "ephone", sourceLabel: "330 / 兔k机", data };
           if (isSullyBackup(data)) return { ...sullySource(data), data };
         } catch (error) {
           throw new Error("文件不是有效的 JSON 备份，或文件内容已损坏。");
         }
-        throw new Error("未识别此备份格式。请选择章鱼机、330/兔k机、zz 或糯米机的原生备份文件。");
+        throw new Error("未识别此备份格式。请选择糯叽机、章鱼机、330/兔k机、zz 或糯米机的原生备份文件。");
       }
 
       function sourceData(data) {
         if (data.type === "EPhoneChunkedBackup") return data.data || {};
         return data.version === 3 && data.data ? data.data : data;
+      }
+
+      function firstRecord(value) {
+        return Array.isArray(value) ? (value[0] || {}) : (value && typeof value === "object" ? value : {});
+      }
+
+      function nuojijiImageMap(structured) {
+        return new Map(asArray(structured.imageStore).filter((item) => item && typeof item === "object")
+          .filter((item) => item.id !== undefined && typeof item.data === "string")
+          .map((item) => [String(item.id), item.data]));
+      }
+
+      function nuojijiApiSettings(structured) {
+        const source = asArray(structured.globalSettings)
+          .find((item) => item && item.key === "apiSettings")?.value;
+        if (!source || typeof source !== "object") return {};
+        // 备份是用户主动选择的本地文件；API 凭证和接口地址按原值保留，
+        // 由用户自行决定是否在导出前移除。
+        return { ...source };
+      }
+
+      function nuojijiMessage(raw, index, groupId = "") {
+        const message = raw && typeof raw === "object" ? { ...raw } : { text: String(raw || "") };
+        let role = valueOr(message, ["role", "sender"], "assistant");
+        if (role === "me") role = "user";
+        if (role === "them") role = "assistant";
+        const content = valueOr(message, ["content", "text", "message"], "");
+        const output = {
+          ...message,
+          role,
+          content,
+          timestamp: asTimestamp(message.timestamp || message.time || Date.now() + index),
+        };
+        if (groupId) {
+          output.groupId = groupId;
+          const senderId = valueOr(message, ["senderCharId", "charId", "memberId"],
+            message.characterId !== groupId ? message.characterId : "");
+          if (senderId) {
+            output.senderId = String(senderId);
+            output.charId = String(senderId);
+            if (message.senderName) output.senderName = message.senderName;
+          }
+        }
+        return output;
+      }
+
+      function nuojijiToEphone(rawBackup) {
+        const structured = rawBackup?.data?.structuredDB;
+        if (!structured || typeof structured !== "object") {
+          throw new Error("不是可识别的糯叽机 v5 备份。");
+        }
+        const images = nuojijiImageMap(structured);
+        const characters = asArray(structured.characters).filter((item) => item && typeof item === "object");
+        const characterById = new Map(characters.map((character) => [String(character.id), character]));
+        const messages = asArray(structured.messages).filter((item) => item && typeof item === "object");
+        const user = asArray(structured.users).find((item) => item && typeof item === "object") || {};
+        const userAvatar = images.get(String(user.avatarRef)) || "";
+        const userProfile = {
+          name: valueOr(user, ["name", "id"], "我"),
+          avatar: userAvatar,
+          bio: valueOr(user, ["intro", "signature"], ""),
+        };
+        const avatarFor = (character) => valueOr(character, ["image"], images.get(String(character.imageRef)) || "");
+        const personaFor = (character) => valueOr(character, ["description"], "");
+        const privateChats = characters.map((character) => {
+          const id = String(character.id);
+          return {
+            id,
+            name: valueOr(character, ["name"], "未命名聊天"),
+            isGroup: false,
+            isPinned: false,
+            avatar: avatarFor(character),
+            history: messages
+              .filter((message) => String(message.characterId) === id && !message.groupId)
+              .map((message, index) => nuojijiMessage(message, index)),
+            settings: {
+              aiPersona: personaFor(character),
+              myPersona: userProfile.bio,
+              myName: userProfile.name,
+              myAvatar: userProfile.avatar,
+              aiAvatar: avatarFor(character),
+              linkedWorldBookIds: [],
+            },
+          };
+        });
+        const groupWrappers = asArray(structured.groupChats);
+        const groups = [];
+        groupWrappers.forEach((wrapper) => asArray(wrapper?.groups).forEach((group) => {
+          if (!group || typeof group !== "object") return;
+          const id = String(group.id);
+          const members = asArray(group.members).map((memberId) => {
+            const character = characterById.get(String(memberId));
+            if (!character) return { id: String(memberId), originalCharId: String(memberId), originalName: String(memberId), realName: String(memberId), groupNickname: String(memberId), persona: "", avatar: "", isNpc: false };
+            const name = valueOr(character, ["name"], "未命名角色");
+            return {
+              id: String(memberId), originalCharId: String(memberId), originalName: name,
+              realName: name, groupNickname: name, persona: personaFor(character),
+              avatar: avatarFor(character), isNpc: false,
+            };
+          });
+          groups.push({
+            id,
+            name: valueOr(group, ["name"], "未命名群聊"),
+            isGroup: true,
+            isPinned: false,
+            avatar: valueOr(group, ["avatar"], ""),
+            members,
+            history: messages
+              .filter((message) => String(message.characterId) === id || String(message.groupId || "") === id)
+              .map((message, index) => nuojijiMessage(message, index, id)),
+            settings: {
+              myPersona: userProfile.bio,
+              myNickname: userProfile.name,
+              myAvatar: userProfile.avatar,
+              groupAvatar: valueOr(group, ["avatar"], ""),
+              linkedWorldBookIds: [],
+            },
+          });
+        }));
+        const worldBooks = asArray(structured.worldBooks).map((book, bookIndex) => {
+          if (!book || typeof book !== "object") return null;
+          const entries = asArray(book.entries).map((entry, entryIndex) => {
+            if (!entry || typeof entry !== "object") return null;
+            const rawKeys = entry.keys ?? entry.key ?? "";
+            const keys = Array.isArray(rawKeys) ? rawKeys.filter(Boolean).map(String) : (rawKeys ? [String(rawKeys)] : [String(book.title || book.name || "世界书")]);
+            return {
+              id: String(entry.uid ?? entry.id ?? `nuojiji_wb_${bookIndex}_${entryIndex}`),
+              keys,
+              comment: String(entry.name || book.title || book.name || "从糯叽机导入"),
+              content: String(entry.content || ""),
+              enabled: entry.disable !== true,
+            };
+          }).filter(Boolean);
+          if (!entries.length && book.content) entries.push({
+            id: String(book.id || `nuojiji_wb_${bookIndex}_0`),
+            keys: [String(book.title || book.name || "世界书")],
+            comment: String(book.title || book.name || "从糯叽机导入"),
+            content: String(book.content), enabled: true,
+          });
+          return entries.length ? {
+            id: String(book.id || `nuojiji_wb_${bookIndex}`),
+            name: String(book.title || book.name || `世界书 ${bookIndex + 1}`),
+            content: entries,
+            isGlobal: Boolean(book.isGlobal),
+          } : null;
+        }).filter(Boolean);
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats: [...privateChats, ...groups],
+            worldBooks,
+            userStickers: [],
+            apiConfig: nuojijiApiSettings(structured),
+            globalSettings: userProfile,
+            customIcons: {},
+            wallpaper: "",
+          },
+        };
+      }
+
+      function copyNuojijiApiSettings(value) {
+        if (!value || typeof value !== "object") return {};
+        // 保留用户在源备份中保存的 API Key、Token、接口地址等配置。
+        return { ...value };
+      }
+
+      function ephoneDataForNuojiji(sourceFormat, rawData) {
+        if (sourceFormat === "nuojiji") return nuojijiToEphone(rawData).data;
+        if (sourceFormat === "octopus") {
+          const chats = [
+            ...asArray(rawData.characters).map((character) => ({
+              id: character.id, name: valueOr(character, ["name", "remarkName", "realName"], "未命名聊天"),
+              isGroup: false, avatar: character.avatar || "", history: asArray(character.history),
+              settings: { aiPersona: character.persona || character.description || "", aiAvatar: character.avatar || "", myName: character.myName || "我", myPersona: character.myPersona || "", myAvatar: character.myAvatar || "" },
+            })),
+            ...asArray(rawData.groups).map((group) => ({
+              id: group.id, name: group.name || "未命名群聊", isGroup: true, avatar: group.avatar || "",
+              members: asArray(group.members), history: asArray(group.history),
+              settings: { myNickname: group.me?.nickname || "我", myPersona: group.me?.persona || "", myAvatar: group.me?.avatar || "", groupAvatar: group.avatar || "" },
+            })),
+          ];
+          return { chats, worldBooks: asArray(rawData.worldBooks), userStickers: asArray(rawData.myStickers), apiConfig: copyNuojijiApiSettings(rawData.apiSettings), globalSettings: { name: "我", avatar: "", bio: "" }, customIcons: rawData.customIcons || {}, wallpaper: rawData.wallpaper || "" };
+        }
+        const converted = toEphoneCompatible(sourceFormat, rawData).data;
+        return { ...converted, apiConfig: copyNuojijiApiSettings(firstRecord(converted.apiConfig)), globalSettings: firstRecord(converted.globalSettings) };
+      }
+
+      function nuojijiWorldBooks(worldBooks) {
+        return asArray(worldBooks).map((book, bookIndex) => {
+          const entries = Array.isArray(book.content) ? book.content : [{ content: book.content || "", keys: [book.name || "世界书"] }];
+          return {
+            id: String(book.id || `nuojiji_wb_${bookIndex}`),
+            title: String(book.name || book.title || `世界书 ${bookIndex + 1}`),
+            author: "备份转换器",
+            description: "",
+            entries: entries.map((entry, entryIndex) => ({
+              name: String(entry.comment || entry.name || `条目 ${entryIndex + 1}`),
+              keys: asArray(entry.keys).join(", "),
+              content: String(entry.content || ""),
+              uid: String(entry.id || `entry_${bookIndex}_${entryIndex}`),
+              disable: entry.enabled === false,
+            })),
+            isGlobal: Boolean(book.isGlobal),
+          };
+        });
+      }
+
+      function toNuojijiBackup(sourceFormat, rawData) {
+        const data = ephoneDataForNuojiji(sourceFormat, rawData);
+        const chats = asArray(data.chats);
+        const characters = chats.filter((chat) => !chat.isGroup).map((chat) => {
+          const settings = chat.settings || {};
+          return {
+            id: String(chat.id),
+            name: chat.name || "未命名角色",
+            gender: "",
+            role: "",
+            group: "Default",
+            birthday: "",
+            nationality: "",
+            description: valueOr(settings, ["aiPersona", "ai-persona"], ""),
+            worldBook: "",
+            aliases: [],
+            type: "character",
+            image: chat.avatar || valueOr(settings, ["aiAvatar", "ai-avatar"], ""),
+          };
+        });
+        const groups = chats.filter((chat) => chat.isGroup).map((chat) => ({
+          id: String(chat.id), name: chat.name || "未命名群聊", avatar: chat.avatar || null,
+          members: asArray(chat.members).map((member) => String(member.originalCharId || member.id || member)),
+          userMembers: [], includeUser: true, groupRoles: {}, memberTitles: {}, mutedMembers: {},
+          generatedMembers: [], createdAt: Date.now(), updatedAt: Date.now(), themeStyle: "default",
+          memberLevels: {}, userLevels: {},
+        }));
+        const messages = [];
+        chats.forEach((chat) => asArray(chat.history).forEach((message, index) => {
+          const role = valueOr(message, ["role", "sender"], "assistant");
+          const sender = role === "user" || role === "me" ? "me" : role === "system" ? "system" : "them";
+          const converted = {
+            id: message.id ?? `${Date.now()}_${messages.length}`,
+            sender,
+            text: valueOr(message, ["text", "content", "message"], ""),
+            timestamp: new Date(asTimestamp(message.timestamp || message.time || Date.now() + index)).toISOString(),
+            userId: "user_imported",
+            characterId: chat.isGroup ? String(chat.id) : String(chat.id),
+          };
+          if (chat.isGroup) {
+            converted.senderCharId = sender === "them" ? String(message.senderId || message.charId || "") : undefined;
+            converted.senderName = message.senderName || undefined;
+            converted.groupId = String(chat.id);
+            converted.groupName = chat.name || "未命名群聊";
+          }
+          messages.push(converted);
+        }));
+        const profile = firstRecord(data.globalSettings);
+        return {
+          version: 5,
+          timestamp: Date.now(),
+          userAgent: "MiniPhone Backup Converter",
+          appVersion: "converted",
+          data: {
+            indexedDB: {},
+            localStorage: {},
+            structuredDB: {
+              characters,
+              friendRequests: [],
+              worldBooks: nuojijiWorldBooks(data.worldBooks),
+              globalSettings: [{ key: "apiSettings", value: copyNuojijiApiSettings(data.apiConfig) }],
+              stickers: [], kaomojis: [],
+              users: [{ uid: "user_imported", id: "user_imported", name: profile.name || "我", signature: profile.bio || "", intro: profile.bio || "", avatarRef: null }],
+              userState: {}, userPosts: [], chatSettings: [], messages, favorites: [], memory: [], summaryEntries: [],
+              callLogs: [], roleStickers: [], tmSessions: [], tmStories: [], multiSceneSessions: [], multiSceneStories: [],
+              multiSceneCastSettings: [], multiSceneSessionSettings: [], multiSceneSessionSummaries: [], customNoises: [], customBgm: [],
+              flashMoments: [], groupSettings: [], userLinks: [], userMessages: [], ttsAudio: [], forumData: {}, calendarData: {},
+              groupChats: [{ userId: "user_imported", groups }], xinsheng: {}, pomodoroSessions: [], couplesData: {}, imageStore: [],
+              stickerStore: [], quickReplies: [], goingOutState: {}, goingOutAreas: [], mapRasterCache: {}, customGames: [], customGameSaves: [],
+              customWidgetTemplates: [], customWidgetState: {}, wallpapers: [], lifeRpgData: {}, whiteDogData: {}, isekaiSaves: [], isekaiPresets: [],
+              pomodoroData: {}, regexRules: [], mcpServers: [], thinkingStore: {}, commitments: [], characterLifeState: {}, chikanPhoneSkins: [],
+              healthEntries: [], healthProfile: {}, homelandState: {}, fontStore: {}, radioData: {}, novelBooks: [], novelChapters: [],
+              coReadBooks: [], coReadChapters: [], coReadSessions: [], naiVibeCache: {}, walletTransactions: [], walletData: {}, shopOrders: [],
+              shopData: {}, shopFulfillments: {}, chatVariables: {}, plugins: [], pluginAssets: [], pluginData: {}, charLifePlans: [], _migration: {},
+            },
+          },
+          metadata: { itemCount: {}, exportType: "filtered", selectedCategories: null, selectedUsers: null, selectedChatEntities: null },
+        };
       }
 
       function valueOr(object, keys, fallback = "") {
@@ -711,6 +1017,7 @@
       }
 
       function toEphoneCompatible(sourceFormat, rawData) {
+        if (sourceFormat === "nuojiji") return nuojijiToEphone(rawData);
         if (sourceFormat === "ephone") {
           const data = sourceData(rawData);
           const chats = asArray(data.chats).map((chat) => ({ ...chat, history: normalizeMessages(chat.history) }));
@@ -941,8 +1248,8 @@
         }
         const data = toEphoneCompatible(sourceFormat, rawData).data;
         const chats = asArray(data.chats);
-        const apiConfig = asArray(data.apiConfig)[0] || {};
-        const globalSettings = asArray(data.globalSettings)[0] || {};
+        const apiConfig = firstRecord(data.apiConfig);
+        const globalSettings = firstRecord(data.globalSettings);
         return {
           apiSettings: apiConfig,
           wallpaper: data.wallpaper || globalSettings.wallpaper || "",
@@ -1017,6 +1324,16 @@
       }
 
       function collectStats(format, data) {
+        if (format === "nuojiji") {
+          const converted = nuojijiToEphone(data).data;
+          const chats = asArray(converted.chats);
+          return {
+            characters: chats.filter((chat) => !chat.isGroup).length,
+            groups: chats.filter((chat) => chat.isGroup).length,
+            messages: chats.reduce((total, chat) => total + asArray(chat.history).length, 0),
+            worldBooks: asArray(converted.worldBooks).length,
+          };
+        }
         if (format === "octopus") {
           const characters = asArray(data.characters);
           const groups = asArray(data.groups);
@@ -1053,6 +1370,10 @@
           messages: chats.reduce((total, chat) => total + asArray(chat.history).length, 0),
           worldBooks: asArray(source.worldBooks).length,
         };
+      }
+
+      function targetSupportsNuojiji(target) {
+        return target === "ephone" || target === "octopus" || target === "nuojiji";
       }
 
       async function gzipJson(data) {
@@ -1104,6 +1425,9 @@
         try {
           const source = await readBackup(selectedFile);
           const target = document.querySelector('input[name="target"]:checked').value;
+          if (source.format === "nuojiji" && !targetSupportsNuojiji(target)) {
+            throw new Error("糯叽机 v5 目前只支持转换到 330 / 兔k机或章鱼机。");
+          }
           const stats = collectStats(source.format, source.data);
           const date = new Date().toISOString().slice(0, 10);
           if (target === "ephone") {
@@ -1114,6 +1438,10 @@
             const output = toOctopusBackup(source.format, source.data);
             const blob = await gzipJson(output);
             showSuccess(source.sourceLabel, "章鱼机", stats, blob, `章鱼机_转换备份_${date}.ee`);
+          } else if (target === "nuojiji") {
+            const output = toNuojijiBackup(source.format, source.data);
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+            showSuccess(source.sourceLabel, "糯叽机 v5", stats, blob, `Nuojiji-v5-Converted-Backup-${date}.json`);
           } else if (target === "zz") {
             const output = toZzBackup(source.format, source.data);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
