@@ -12,7 +12,7 @@ assert.doesNotMatch(fileInputTag, /\saccept=/i, '.ee must not be blocked by the 
 const elements = new Map();
 const element = () => ({
   addEventListener() {},
-  classList: { add() {}, remove() {} },
+  classList: { add() {}, remove() {}, toggle() {} },
   style: {},
   textContent: '',
   disabled: false,
@@ -25,6 +25,8 @@ const document = {
   },
   querySelector() { return { value: 'ephone' }; },
   createElement: element,
+  // 脚本在加载时就给 document 挂了拖放监听
+  addEventListener() {},
   body: { appendChild() {}, removeChild() {} },
 };
 const context = vm.createContext({

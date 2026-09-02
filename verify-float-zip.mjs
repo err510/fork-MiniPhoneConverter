@@ -20,7 +20,7 @@ const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 
 const element = () => ({
-  addEventListener() {}, classList: { add() {}, remove() {} },
+  addEventListener() {}, classList: { add() {}, remove() {}, toggle() {} },
   style: {}, textContent: '', disabled: false, files: [],
 });
 const elements = new Map();
@@ -30,6 +30,8 @@ const context = vm.createContext({
     getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
     querySelector() { return { value: 'ephone' }; },
     createElement: element,
+    // 脚本在加载时就给 document 挂了拖放监听
+    addEventListener() {},
     body: { appendChild() {}, removeChild() {} },
   },
   window: globalThis,

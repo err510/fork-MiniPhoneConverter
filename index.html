@@ -7,18 +7,17 @@
     <style>
       :root {
         color-scheme: light;
-        --ink: #17212b;
-        --muted: #617081;
-        --line: #cfd8df;
+        --ink: #14161a;
+        --ink-soft: #454b55;
+        --muted: #7a818c;
+        --line: #e3e5e8;
+        --line-strong: #c7ccd2;
         --panel: #ffffff;
-        --canvas: #eef3f2;
-        --teal: #007c78;
-        --teal-dark: #005e5b;
-        --coral: #d75a4a;
-        --coral-soft: #fff0ec;
-        --success: #087f54;
-        --warning: #915a00;
-        --warning-soft: #fff7e6;
+        --canvas: #f4f5f6;
+        --tint: #eef0f2;
+        --ok: #2f6d4f;
+        --danger: #a33a2a;
+        --danger-soft: #fbf2f0;
       }
 
       * { box-sizing: border-box; }
@@ -27,65 +26,141 @@
         min-width: 320px;
         background: var(--canvas);
         color: var(--ink);
-        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        font: 15px/1.6 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
-      .shell { max-width: 1080px; margin: 0 auto; padding: 34px 22px 48px; }
-      header { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; margin-bottom: 28px; }
-      h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 0; }
-      .subtitle { max-width: 620px; margin: 7px 0 0; color: var(--muted); }
-      .local-mark { color: var(--teal-dark); font-size: 13px; font-weight: 650; white-space: nowrap; }
-      main { display: grid; gap: 18px; }
-      .surface { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 24px; }
-      .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
-      .step { min-width: 0; }
-      .step-label { display: block; margin-bottom: 7px; color: var(--teal-dark); font-size: 12px; font-weight: 750; letter-spacing: 0; text-transform: uppercase; }
-      h2 { margin: 0 0 10px; font-size: 18px; letter-spacing: 0; }
+      .shell { max-width: 900px; margin: 0 auto; padding: 52px 22px 64px; }
+
+      header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+      h1 { margin: 0; font-size: 30px; font-weight: 680; letter-spacing: -.02em; }
+      .subtitle { max-width: 640px; margin: 9px 0 0; color: var(--muted); }
+      .local-mark {
+        flex: none; border: 1px solid var(--line-strong); border-radius: 999px; padding: 4px 12px;
+        color: var(--ink-soft); font-size: 12px; font-weight: 600; white-space: nowrap;
+      }
+
+      main { display: grid; gap: 14px; }
+      .surface { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+      .step { padding: 26px 26px 28px; }
+      .step + .step { border-top: 1px solid var(--line); }
+      .step-head { display: flex; align-items: baseline; gap: 10px; }
+      .step-num { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+      h2 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
       p { margin: 0; }
-      .field-note { min-height: 45px; color: var(--muted); font-size: 13px; }
-      .file-row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
-      input[type="file"] { display: none; }
-      button, .file-button {
-        display: inline-flex; align-items: center; justify-content: center; min-height: 38px;
-        border: 1px solid transparent; border-radius: 5px; padding: 8px 13px; cursor: pointer;
-        font: inherit; font-weight: 650; letter-spacing: 0;
+      .step-note { margin: 5px 0 16px; color: var(--muted); font-size: 13px; }
+
+      /* 不用 display:none 藏 input：那样键盘用户 Tab 不到它，只能靠鼠标点。
+         视觉上藏起来但保留可聚焦，焦点框交给 .dropzone:focus-within 画。 */
+      input[type="file"] {
+        position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0;
+        overflow: hidden; white-space: nowrap;
       }
-      .file-button { color: #fff; background: var(--teal); }
-      .file-button:hover, .primary:hover { background: var(--teal-dark); }
-      .file-name { overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-      .target-list { display: grid; gap: 8px; margin-top: 12px; }
+      .dropzone {
+        position: relative;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+        min-height: 134px; border: 1px dashed var(--line-strong); border-radius: 10px; padding: 22px;
+        background: #fbfbfc; text-align: center; cursor: pointer;
+        transition: border-color .15s, background .15s;
+      }
+      .dropzone:hover { border-color: var(--ink-soft); background: var(--tint); }
+      .dropzone:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .dropzone.is-over { border-style: solid; border-color: var(--ink); background: var(--tint); }
+      .dropzone.has-file { border-style: solid; background: var(--panel); }
+      .dz-mark { margin-bottom: 4px; color: var(--ink-soft); font-size: 19px; line-height: 1; }
+      .dz-title { font-weight: 600; word-break: break-all; }
+      .dz-sub { color: var(--muted); font-size: 13px; }
+
+      /* 选完文件立刻显示识别结果，不用等到点转换才知道文件能不能用 */
+      .probe {
+        display: none; margin-top: 12px; border-left: 2px solid var(--line-strong); border-radius: 0 8px 8px 0;
+        padding: 9px 14px; background: var(--tint); color: var(--ink-soft); font-size: 13px;
+      }
+      .probe.visible { display: block; }
+      .probe.ok { border-left-color: var(--ok); }
+      .probe.bad { border-left-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+      .probe b { color: var(--ink); font-weight: 650; }
+      .probe.bad b { color: inherit; }
+
+      .target-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 8px; }
       .target-option {
-        display: flex; align-items: flex-start; gap: 9px; border: 1px solid var(--line);
-        border-radius: 5px; padding: 10px; cursor: pointer;
+        position: relative; border: 1px solid var(--line); border-radius: 9px;
+        padding: 12px 38px 12px 14px; background: var(--panel); cursor: pointer;
+        transition: border-color .15s, background .15s;
       }
-      .target-option:has(input:checked) { border-color: var(--teal); background: #eef9f8; }
-      .target-option input { margin: 4px 0 0; accent-color: var(--teal); }
-      .target-option strong { display: block; font-size: 14px; }
-      .target-option span { display: block; color: var(--muted); font-size: 12px; }
-      .actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
-      .primary { background: var(--teal); color: #fff; }
-      button:disabled { cursor: not-allowed; opacity: .55; }
+      .target-option:hover { border-color: var(--line-strong); background: #fafafb; }
+      .target-option:has(input:checked) { border-color: var(--ink); background: var(--tint); }
+      .target-option:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+      /* 原生 radio 藏起来但保留可聚焦，选中标记用 ::after 画，省掉一个纯装饰元素 */
+      .target-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+      .target-option::after {
+        content: ""; position: absolute; top: 14px; right: 14px; width: 15px; height: 15px;
+        border: 1px solid var(--line-strong); border-radius: 50%;
+      }
+      .target-option:has(input:checked)::after {
+        border-color: var(--ink); background: var(--ink); box-shadow: inset 0 0 0 3px var(--panel);
+      }
+      .target-option strong { display: block; font-size: 14px; font-weight: 650; }
+      .target-option span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+      .actionbar {
+        display: flex; align-items: center; justify-content: space-between; gap: 20px;
+        border: 1px solid var(--line); border-radius: 12px; padding: 15px 20px; background: var(--panel);
+      }
       .hint { color: var(--muted); font-size: 13px; }
+      .hint b { color: var(--ink-soft); font-weight: 650; }
+
+      button, .download {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px;
+        border: 1px solid transparent; border-radius: 8px; padding: 9px 18px; cursor: pointer;
+        font: inherit; font-weight: 650; white-space: nowrap;
+      }
+      .primary, .download { background: var(--ink); color: #fff; text-decoration: none; }
+      .primary:hover:not(:disabled), .download:hover { background: #000; }
+      button:disabled { cursor: not-allowed; opacity: .35; }
+      .spinner {
+        flex: none; width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, .35);
+        border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+
       .result { display: none; }
-      .result.visible { display: block; }
-      .result-top { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
-      .result h2 { margin-bottom: 3px; }
-      .success { color: var(--success); font-weight: 700; }
-      .download { color: #fff; background: var(--teal); text-decoration: none; }
-      .report { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 20px 0 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--line); }
-      .stat { min-width: 0; padding: 12px; background: #fbfcfc; }
+      .result.visible { display: block; padding: 26px; }
+      .result-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+      .result h2 { font-size: 19px; }
+      .result-summary { margin-top: 4px; color: var(--ok); font-size: 14px; font-weight: 600; }
+      .result.is-error .result-summary { color: var(--danger); }
+      .report {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 1px;
+        margin-top: 20px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--line);
+      }
+      .stat { min-width: 0; padding: 13px 15px; background: var(--panel); }
       .stat span { display: block; color: var(--muted); font-size: 12px; }
-      .stat strong { display: block; margin-top: 2px; font-size: 22px; }
-      .notice { margin-top: 12px; border-left: 3px solid #d89a2b; background: var(--warning-soft); padding: 10px 12px; color: var(--warning); font-size: 13px; }
-      .error { border-left-color: var(--coral); background: var(--coral-soft); color: #9f2d20; }
-      .details { margin-top: 14px; color: var(--muted); font-size: 13px; white-space: pre-line; }
-      footer { margin-top: 4px; color: var(--muted); font-size: 12px; }
+      .stat strong {
+        display: block; margin-top: 3px; font-size: 21px; font-weight: 650;
+        letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+      }
+      .stat-text strong { margin-top: 5px; font-size: 15px; line-height: 1.5; letter-spacing: 0; }
+      .notice {
+        margin-top: 16px; border-left: 2px solid var(--line-strong); border-radius: 0 8px 8px 0;
+        padding: 11px 14px; background: var(--tint); color: var(--ink-soft); font-size: 13px;
+      }
+      .notice.error { border-left-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+      .details { margin-top: 12px; color: var(--muted); font-size: 13px; white-space: pre-line; }
+      footer { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+
       @media (max-width: 720px) {
-        .shell { padding: 24px 14px 32px; }
-        header, .actions, .result-top { align-items: stretch; flex-direction: column; }
-        .steps { grid-template-columns: 1fr; }
-        .field-note { min-height: auto; }
-        .report { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .download { width: 100%; }
+        .shell { padding: 34px 16px 44px; }
+        header { flex-direction: column; align-items: flex-start; gap: 12px; }
+      }
+      @media (max-width: 560px) {
+        .shell { padding: 26px 14px 36px; }
+        h1 { font-size: 25px; }
+        .step { padding: 20px 18px 22px; }
+        .target-grid { grid-template-columns: 1fr; }
+        .actionbar, .result-top { flex-direction: column; align-items: stretch; }
+        .actionbar .primary, .download { width: 100%; }
+        .result.visible { padding: 20px 18px; }
       }
     </style>
   </head>
@@ -94,91 +169,88 @@
       <header>
         <div>
           <h1>小手机备份转换器</h1>
-          <p class="subtitle">在糯叽机、330、兔k机、章鱼机、zz 与两种糯米机之间转换备份。所有处理都在当前浏览器中完成。</p>
+          <p class="subtitle">在 330 / 兔k机、章鱼机、zz、弯弯、Float、糯叽机与两种糯米机之间转换备份。所有处理都在当前浏览器中完成。</p>
         </div>
         <div class="local-mark">本地离线处理</div>
       </header>
 
       <main>
         <section class="surface" aria-label="转换设置">
-          <div class="steps">
-            <div class="step">
-              <span class="step-label">01 选择备份</span>
-              <h2>导入源文件</h2>
-              <p class="field-note">支持糯叽机 v5、章鱼机 `.ee`，330/兔k机、zz、弯弯、Float、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
-              <div class="file-row">
-                <label class="file-button" for="backup-file">选择文件</label>
-                <!-- 不设置 accept：部分 Windows/Chromium 文件选择器会把未注册的 .ee 扩展名置灰，
-                     导致章鱼机备份无法选取。文件类型统一交给下方解析逻辑校验。 -->
-                <input id="backup-file" type="file" />
-                <span class="file-name" id="file-name">尚未选择文件</span>
-              </div>
-            </div>
+          <div class="step">
+            <div class="step-head"><span class="step-num">01</span><h2>选择备份文件</h2></div>
+            <p class="step-note">支持糯叽机 v5、章鱼机 `.ee`，330/兔k机、zz、弯弯、Float、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
+            <!-- label 直接包住 input（不写 for）：两者同时存在时，点一次会在部分浏览器里
+                 转发成两次点击，把文件选择框弹两遍。 -->
+            <label class="dropzone" id="dropzone">
+              <span class="dz-mark" aria-hidden="true">⇪</span>
+              <span class="dz-title" id="dz-title">把备份文件拖到这里，或点击选择</span>
+              <span class="dz-sub" id="dz-sub">支持 .json / .zip / .ee</span>
+              <!-- 不设置 accept：部分 Windows/Chromium 文件选择器会把未注册的 .ee 扩展名置灰，
+                   导致章鱼机备份无法选取。文件类型统一交给下方解析逻辑校验。 -->
+              <input id="backup-file" type="file" />
+            </label>
+            <p class="probe" id="probe" aria-live="polite"></p>
+          </div>
 
-            <div class="step">
-              <span class="step-label">02 转换目标</span>
-              <h2>生成哪种备份</h2>
-              <p class="field-note">生成后请到相应小手机的原生“导入备份”功能中选择下载的文件。</p>
-              <div class="target-list">
-                <label class="target-option">
-                  <input type="radio" name="target" value="ephone" checked />
-                  <span><strong>330 / 兔k机</strong><span>生成 330 兼容的 v3 JSON</span></span>
-                </label>
-                <label class="target-option">
-                  <input type="radio" name="target" value="octopus" />
-                  <span><strong>章鱼机</strong><span>生成可导入的 `.ee` Gzip 备份</span></span>
-                </label>
-                <label class="target-option">
-                  <input type="radio" name="target" value="zz" />
-                  <span><strong>zz 小手机</strong><span>生成 zz 原生 JSON 备份</span></span>
-                </label>
-                <label class="target-option">
-                  <input type="radio" name="target" value="sully-hand" />
-                  <span><strong>手抓糯米机</strong><span>生成可原生导入的 SullyOS v3 JSON</span></span>
-                </label>
-                <label class="target-option">
-                  <input type="radio" name="target" value="sully-csy" />
-                  <span><strong>csy 糯米机</strong><span>生成可原生导入的 SullyOS v2 JSON</span></span>
-                </label>
-                <label class="target-option">
-                  <input type="radio" name="target" value="nuojiji" />
-                  <span><strong>糯叽机 v5</strong><span>生成可导入的糯叽机 JSON（通用聊天数据）</span></span>
-                </label>
-                <label class="target-option">
-                  <input type="radio" name="target" value="wanwan" />
-                  <span><strong>弯弯小手机</strong><span>生成弯弯原生 JSON 备份</span></span>
-                </label>
-                <label class="target-option">
-                  <input type="radio" name="target" value="float" />
-                  <span><strong>Float 小手机</strong><span>生成 Float 原生 ZIP 备份</span></span>
-                </label>
-              </div>
-            </div>
-
-            <div class="step">
-              <span class="step-label">03 转换与下载</span>
-              <h2>保护现有数据</h2>
-              <p class="field-note">目标小手机导入时会覆盖数据。请先保留目标端当前的原始备份，再进行导入。</p>
-              <div class="actions">
-                <button id="convert-button" class="primary" type="button" disabled>转换备份</button>
-              </div>
+          <div class="step">
+            <div class="step-head"><span class="step-num">02</span><h2>转换目标</h2></div>
+            <p class="step-note">生成后请到相应小手机的原生“导入备份”功能中选择下载的文件。</p>
+            <div class="target-grid">
+              <label class="target-option">
+                <input type="radio" name="target" value="ephone" checked />
+                <strong>330 / 兔k机</strong><span>330 兼容的 v3 JSON</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="octopus" />
+                <strong>章鱼机</strong><span>可导入的 `.ee` Gzip 备份</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="zz" />
+                <strong>zz 小手机</strong><span>zz 原生 JSON 备份</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="sully-hand" />
+                <strong>手抓糯米机</strong><span>可原生导入的 SullyOS v3 JSON</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="sully-csy" />
+                <strong>csy 糯米机</strong><span>可原生导入的 SullyOS v2 JSON</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="nuojiji" />
+                <strong>糯叽机 v5</strong><span>糯叽机 JSON（通用聊天数据）</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="wanwan" />
+                <strong>弯弯小手机</strong><span>弯弯原生 JSON 备份</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="float" />
+                <strong>Float 小手机</strong><span>Float 原生 ZIP 备份</span>
+              </label>
             </div>
           </div>
         </section>
+
+        <div class="actionbar">
+          <p class="hint"><b>导入会覆盖目标端的现有数据。</b>请先在目标小手机里导出一份当前备份再导入。</p>
+          <button id="convert-button" class="primary" type="button" disabled>转换备份</button>
+        </div>
 
         <section id="result" class="surface result" aria-live="polite">
           <div class="result-top">
             <div>
               <h2 id="result-title">转换完成</h2>
-              <p id="result-summary" class="success"></p>
+              <p id="result-summary" class="result-summary"></p>
             </div>
             <a id="download-link" class="download" href="#" download>下载转换后的备份</a>
           </div>
           <div class="report">
-            <div class="stat"><span>识别来源</span><strong id="source-format">-</strong></div>
+            <div class="stat stat-text"><span>识别来源</span><strong id="source-format">-</strong></div>
             <div class="stat"><span>私聊角色</span><strong id="character-count">0</strong></div>
             <div class="stat"><span>群聊</span><strong id="group-count">0</strong></div>
             <div class="stat"><span>消息</span><strong id="message-count">0</strong></div>
+            <div class="stat"><span>世界书</span><strong id="worldbook-count">0</strong></div>
           </div>
           <div id="result-notice" class="notice"></div>
           <div id="result-details" class="details"></div>
@@ -190,18 +262,103 @@
 
     <script>
       const fileInput = document.getElementById("backup-file");
-      const fileName = document.getElementById("file-name");
+      const dropzone = document.getElementById("dropzone");
+      const dzTitle = document.getElementById("dz-title");
+      const dzSub = document.getElementById("dz-sub");
+      const probe = document.getElementById("probe");
       const convertButton = document.getElementById("convert-button");
       const result = document.getElementById("result");
       const downloadLink = document.getElementById("download-link");
       let selectedFile = null;
       let previousObjectUrl = null;
+      // 选完文件就先解析一遍存下来，点“转换备份”时直接复用。
+      // 大备份（尤其 Float 的 ZIP 要解压再还原图片）解析要几秒，读两遍纯属浪费。
+      let detected = null;
+      // 连着换文件时，先发的解析可能后返回；用这个序号把过期结果丢掉。
+      let probeToken = 0;
 
-      fileInput.addEventListener("change", () => {
-        selectedFile = fileInput.files[0] || null;
-        fileName.textContent = selectedFile ? selectedFile.name : "尚未选择文件";
-        convertButton.disabled = !selectedFile;
+      function formatSize(bytes) {
+        if (!Number.isFinite(bytes)) return "";
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+      }
+
+      async function probeFile(file, token) {
+        probe.className = "probe visible";
+        probe.textContent = "正在读取备份…";
+        try {
+          const source = await readBackup(file);
+          const stats = collectStats(source.format, source.data);
+          if (token !== probeToken) return;
+          detected = { source, stats };
+          const label = document.createElement("b");
+          label.textContent = source.sourceLabel;
+          probe.className = "probe visible ok";
+          probe.textContent = "";
+          probe.append(
+            "识别为 ", label,
+            ` · 角色 ${stats.characters} · 群聊 ${stats.groups} · 消息 ${stats.messages} · 世界书 ${stats.worldBooks}`,
+          );
+          convertButton.disabled = false;
+        } catch (error) {
+          if (token !== probeToken) return;
+          console.error(error);
+          probe.className = "probe visible bad";
+          probe.textContent = error.message || "无法读取这个文件。";
+          convertButton.disabled = true;
+        }
+      }
+
+      function setFile(file) {
+        selectedFile = file || null;
+        detected = null;
+        probeToken += 1;
+        convertButton.disabled = true;
         result.classList.remove("visible");
+        dropzone.classList.toggle("has-file", Boolean(selectedFile));
+        if (!selectedFile) {
+          dzTitle.textContent = "把备份文件拖到这里，或点击选择";
+          dzSub.textContent = "支持 .json / .zip / .ee";
+          probe.className = "probe";
+          return;
+        }
+        dzTitle.textContent = selectedFile.name;
+        dzSub.textContent = formatSize(selectedFile.size);
+        probeFile(selectedFile, probeToken);
+      }
+
+      fileInput.addEventListener("change", () => setFile(fileInput.files[0] || null));
+
+      // 整页都要拦截拖放的默认行为：拖偏一点落到区域外时，
+      // 浏览器会直接打开那个文件当页面，把转换器顶掉。
+      ["dragenter", "dragover"].forEach((type) => {
+        document.addEventListener(type, (event) => {
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        });
+      });
+      document.addEventListener("drop", (event) => event.preventDefault());
+
+      dropzone.addEventListener("dragenter", () => dropzone.classList.add("is-over"));
+      dropzone.addEventListener("dragover", () => dropzone.classList.add("is-over"));
+      dropzone.addEventListener("dragleave", (event) => {
+        // 掠过子元素时也会冒泡出 dragleave，只有真的离开外框才取消高亮。
+        if (!dropzone.contains(event.relatedTarget)) dropzone.classList.remove("is-over");
+      });
+      dropzone.addEventListener("drop", (event) => {
+        dropzone.classList.remove("is-over");
+        const file = event.dataTransfer?.files?.[0];
+        if (!file) return;
+        setFile(file);
+        try {
+          // 顺带同步给 input，让它的 files 和界面显示的保持一致。
+          const transfer = new DataTransfer();
+          transfer.items.add(file);
+          fileInput.files = transfer.files;
+        } catch (error) {
+          console.warn("无法同步文件到 input，转换本身不受影响。", error);
+        }
       });
 
       function isOctopusBackup(data) {
@@ -2289,13 +2446,12 @@
       }
 
       function showError(message) {
-        result.classList.add("visible");
+        result.classList.add("visible", "is-error");
         document.getElementById("result-title").textContent = "无法转换";
         document.getElementById("result-summary").textContent = "请检查文件后重试。";
-        document.getElementById("source-format").textContent = "-";
-        document.getElementById("character-count").textContent = "-";
-        document.getElementById("group-count").textContent = "-";
-        document.getElementById("message-count").textContent = "-";
+        for (const id of ["source-format", "character-count", "group-count", "message-count", "worldbook-count"]) {
+          document.getElementById(id).textContent = "-";
+        }
         const notice = document.getElementById("result-notice");
         notice.className = "notice error";
         notice.textContent = message;
@@ -2307,32 +2463,53 @@
         if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
         previousObjectUrl = URL.createObjectURL(blob);
         result.classList.add("visible");
+        result.classList.remove("is-error");
         document.getElementById("result-title").textContent = "转换完成";
         document.getElementById("result-summary").textContent = `已生成可导入 ${target} 的备份文件。`;
         document.getElementById("source-format").textContent = sourceLabel;
         document.getElementById("character-count").textContent = String(stats.characters);
         document.getElementById("group-count").textContent = String(stats.groups);
         document.getElementById("message-count").textContent = String(stats.messages);
+        document.getElementById("worldbook-count").textContent = String(stats.worldBooks);
         const notice = document.getElementById("result-notice");
         notice.className = "notice";
         notice.textContent = "请先在目标小手机内导出一份当前备份。导入转换文件会覆盖目标端的现有数据。";
-        document.getElementById("result-details").textContent = `同时处理世界书 ${stats.worldBooks} 本。\n只转换已确认的通用数据：角色、群聊、消息、世界书、头像与基础设置。目标程序专有的功能数据可能不会显示。`;
+        document.getElementById("result-details").textContent = "只转换已确认的通用数据：角色、群聊、消息、世界书、头像与基础设置。目标程序专有的功能数据可能不会显示。";
         downloadLink.href = previousObjectUrl;
         downloadLink.download = filename;
         downloadLink.style.display = "inline-flex";
       }
 
+      function setBusy(busy) {
+        convertButton.disabled = busy || !selectedFile;
+        convertButton.textContent = "";
+        if (!busy) {
+          convertButton.textContent = "转换备份";
+          return;
+        }
+        const spinner = document.createElement("span");
+        spinner.className = "spinner";
+        convertButton.append(spinner, "正在转换…");
+      }
+
       convertButton.addEventListener("click", async () => {
         if (!selectedFile) return;
-        convertButton.disabled = true;
-        convertButton.textContent = "正在转换...";
+        setBusy(true);
         try {
-          const source = await readBackup(selectedFile);
+          // 让浏览器先把按钮的加载态画出来，再进后面同步的重活；
+          // 少了这一步，几秒钟的转换全程都是没有反馈的卡顿。
+          // 后台标签页里 rAF 根本不触发，所以再加一个定时器兜底：
+          // 否则点完转换随手切走，回来会发现一直卡在“正在转换”。
+          await new Promise((resolve) => {
+            setTimeout(resolve, 32);
+            requestAnimationFrame(() => setTimeout(resolve, 0));
+          });
+          const source = detected ? detected.source : await readBackup(selectedFile);
           const target = document.querySelector('input[name="target"]:checked').value;
           if (source.format === "nuojiji" && !targetSupportsNuojiji(target)) {
             throw new Error("糯叽机 v5 目前只支持转换到 330 / 兔k机、章鱼机、弯弯或 Float。");
           }
-          const stats = collectStats(source.format, source.data);
+          const stats = detected ? detected.stats : collectStats(source.format, source.data);
           const date = new Date().toISOString().slice(0, 10);
           if (target === "ephone") {
             const output = toEphoneCompatible(source.format, source.data);
@@ -2373,8 +2550,7 @@
           console.error(error);
           showError(error.message || "转换时发生未知错误。");
         } finally {
-          convertButton.disabled = !selectedFile;
-          convertButton.textContent = "转换备份";
+          setBusy(false);
         }
       });
     </script>
