@@ -16,7 +16,10 @@ const element = () => ({
   style: {},
   textContent: '',
   disabled: false,
+  checked: false,
+  value: '',
   files: [],
+  append() {},
 });
 const document = {
   getElementById(id) {
@@ -24,6 +27,8 @@ const document = {
     return elements.get(id);
   },
   querySelector() { return { value: 'ephone' }; },
+  // 目标单选框的监听是在加载时批量挂的，没有真实 DOM 时给个空列表即可
+  querySelectorAll() { return []; },
   createElement: element,
   // 脚本在加载时就给 document 挂了拖放监听
   addEventListener() {},
@@ -767,5 +772,239 @@ for (const [format, data] of Object.entries(newSources)) {
 
   assert.ok((await context.toFloatBackup(format, data)).size > 0, `${format} → Float 为空`);
 }
+
+// ===== 记忆迁移 =====
+// 向量在备份 JSON 里的两种形态：csy 是 number[]，手抓是 Float32 的原始字节
+//（Uint8Array 序列化后长成 {"0":..,"1":..}）。往返必须无损。
+const vectorNumbers = [0.25, -0.5, 1, 0];
+// 脚本跑在 vm 里，它造出来的数组是另一个 realm 的，deepStrictEqual 会比原型。
+// 摊平成本 realm 的数组再比。
+const plain = (value) => (value == null ? value : [...value]);
+const vectorBytes = context.memoryVectorToBytes(vectorNumbers);
+assert.equal(Object.keys(vectorBytes).length, vectorNumbers.length * 4, '每维 4 字节');
+assert.deepEqual(plain(context.memoryVectorToNumbers(vectorBytes)), vectorNumbers, '向量字节往返丢精度了');
+assert.deepEqual(plain(context.memoryVectorToNumbers(vectorNumbers)), vectorNumbers, 'number[] 应原样返回');
+
+const csyWithMemory = {
+  version: 2,
+  characters: [{ id: 'c1', name: '阿糯' }],
+  groups: [],
+  messages: [],
+  vectorMemories: [
+    {
+      id: 'vm1', charId: 'c1', title: '奶茶', content: '用户不再喝奶茶了',
+      importance: 8, createdAt: 1700000000000,
+      vector: vectorNumbers, modelId: 'Pro/BAAI/bge-m3',
+    },
+    { id: 'vm2', charId: 'c1', content: '这条已作废', importance: 3, deprecated: true },
+  ],
+};
+
+// 默认（不勾选项）一条记忆都不该带过去
+const handNoMemory = context.toSullyBackup('sully-hand', 'sully-csy', csyWithMemory);
+assert.equal(handNoMemory.memoryNodes, undefined, '没勾记忆时不该写 memoryNodes');
+
+// csy → 手抓：结构不同（vectorMemories vs memoryNodes+memoryVectors），必须重建
+const handMemory = context.toSullyBackup('sully-hand', 'sully-csy', csyWithMemory,
+  { memory: true, keepVectors: true });
+assert.equal(handMemory.memoryNodes.length, 1, '作废的记忆不该带过去');
+assert.equal(handMemory.memoryNodes[0].content, '用户不再喝奶茶了');
+assert.equal(handMemory.memoryNodes[0].room, 'living_room', '缺房间信息时该落客厅');
+assert.equal(handMemory.memoryNodes[0].importance, 8, 'csy 与手抓都是 1-10，不该换算');
+assert.equal(handMemory.memoryNodes[0].embedded, true);
+assert.equal(handMemory.memoryVectors.length, 1);
+// Pro/ 是硅基的计费档前缀，手抓的 normalizeModelName 会剥掉，视为同一个 bge-m3
+assert.equal(handMemory.memoryVectors[0].model, 'Pro/BAAI/bge-m3');
+assert.equal(handMemory.memoryVectors[0].dimensions, vectorNumbers.length);
+assert.deepEqual(plain(context.memoryVectorToNumbers(handMemory.memoryVectors[0].vector)), vectorNumbers,
+  '手抓向量应存成 Float32 字节且无损');
+
+// 不勾「保留向量」时只搬正文
+const handTextOnly = context.toSullyBackup('sully-hand', 'sully-csy', csyWithMemory, { memory: true });
+assert.equal(handTextOnly.memoryNodes.length, 1);
+assert.equal(handTextOnly.memoryNodes[0].embedded, false, '不留向量时 embedded 必须是 false');
+assert.equal(handTextOnly.memoryVectors, undefined);
+
+// 手抓 → csy：升级方向缺 title，用正文前 6 字兜底
+const csyBack = context.toSullyBackup('sully-csy', 'sully-hand', handMemory,
+  { memory: true, keepVectors: true });
+assert.equal(csyBack.vectorMemories.length, 1);
+assert.equal(csyBack.vectorMemories[0].title, '用户不再喝奶', 'title 该取正文前 6 字');
+assert.equal(csyBack.vectorMemories[0].source, 'import');
+assert.deepEqual(plain(csyBack.vectorMemories[0].vector), vectorNumbers, 'csy 向量应还原成 number[]');
+
+// csy → 330/兔k机：正文落 longTermMemory，同时补一份隐藏的 summary 消息给兔k机
+const ephoneMemory = context.toEphoneCompatible('sully-csy', csyWithMemory,
+  { memory: true, summaryMessages: true }).data;
+const memChat = ephoneMemory.chats.find((chat) => chat.id === 'c1');
+assert.equal(memChat.longTermMemory.length, 1, '330 从 longTermMemory 读记忆');
+assert.equal(memChat.longTermMemory[0].content, '用户不再喝奶茶了');
+const summaryMessages = memChat.history.filter((message) => message.type === 'summary');
+assert.equal(summaryMessages.length, 1, '兔k机从 history 里的 summary 消息读记忆');
+assert.equal(summaryMessages[0].isHidden, true, 'summary 消息必须隐藏，否则 330 会多出气泡');
+
+// 重复转换不该让 summary 越滚越多
+const twice = context.toEphoneCompatible('ephone',
+  { version: 3, data: ephoneMemory }, { memory: true, summaryMessages: true }).data;
+assert.equal(twice.chats.find((chat) => chat.id === 'c1').history
+  .filter((message) => message.type === 'summary').length, 1, 'summary 消息重复叠加了');
+
+// 兔k机 → csy：源里只有 summary 消息，没有 longTermMemory，也要能读出来
+const rabbitStyle = {
+  version: 3,
+  data: {
+    chats: [{
+      id: 'c1', name: '阿糯', isGroup: false,
+      history: [
+        { id: 'm1', role: 'user', content: '你好', timestamp: 10 },
+        { id: 's1', role: 'system', type: 'summary', content: '两人约好周末见面', timestamp: 11, isHidden: true },
+      ],
+    }],
+  },
+};
+const rabbitToCsy = context.toSullyBackup('sully-csy', 'ephone', rabbitStyle, { memory: true });
+assert.equal(rabbitToCsy.vectorMemories.length, 1, '兔k机的 summary 消息没被当成记忆读出来');
+assert.equal(rabbitToCsy.vectorMemories[0].content, '两人约好周末见面');
+assert.deepEqual(plain(rabbitToCsy.vectorMemories[0].vector), [], '没有向量时该留空数组');
+
+// 330 → Float：importance 从 1-10 换算成 0-1，模型不同所以向量不搬
+const memoryFloatBlob = await context.toFloatBackup('sully-csy', csyWithMemory,
+  { memory: true, keepVectors: true });
+const memoryFloatMap = context.zipEntryMap(await context.readZipEntries({
+  name: 'float-memory.zip', arrayBuffer: () => memoryFloatBlob.arrayBuffer(),
+}));
+const memoryFloatManifest = JSON.parse(new TextDecoder().decode(memoryFloatMap.get('manifest.json')));
+const memoryModule = memoryFloatManifest.modules.find((entry) => entry.id === 'memory');
+assert.ok(memoryModule, 'Float 备份里没有 memory 模块');
+assert.equal(memoryModule.records, 1);
+const floatMemoryPayload = JSON.parse(
+  new TextDecoder().decode(memoryFloatMap.get('modules/memory/000.json')));
+const floatMemorySource = floatMemoryPayload.sources[0];
+assert.equal(floatMemorySource.dbName, 'ai_phone_memory_db_v1');
+assert.equal(floatMemorySource.stores[0].name, 'memories');
+const floatRecords = floatMemorySource.stores[0].records;
+assert.equal(floatRecords.length, 1);
+assert.equal(floatRecords[0].value.content, '用户不再喝奶茶了');
+assert.equal(floatRecords[0].value.type, 'long_term');
+assert.match(floatRecords[0].value.characterId, /^char_/,
+  '记忆的角色 ID 要换成 Float 新生成的 char_N，否则挂不到角色身上');
+assert.ok(Math.abs(floatRecords[0].value.importance - 7 / 9) < 1e-9,
+  'Float 的 importance 是 0-1，8 分该换算成 7/9');
+assert.equal(floatRecords[0].value.embedding, undefined,
+  'Float 用 text-embedding-3-small，和 bge-m3 的向量空间对不上，不该硬搬');
+
+// 没勾记忆时不该出现 memory 模块
+const plainFloatBlob = await context.toFloatBackup('sully-csy', csyWithMemory);
+const plainFloatManifest = JSON.parse(new TextDecoder().decode(
+  context.zipEntryMap(await context.readZipEntries({
+    name: 'float-plain.zip', arrayBuffer: () => plainFloatBlob.arrayBuffer(),
+  })).get('manifest.json')));
+assert.equal(plainFloatManifest.modules.some((entry) => entry.id === 'memory'), false,
+  '默认不转记忆，不该写 memory 模块');
+
+// 糯叽机：容器是 data.structuredDB，外层没有 version:3，
+// 读的时候不能走 sourceData（那个只在 version===3 时才下钻）
+const nuojijiMemories = context.extractMemories('nuojiji', {
+  data: {
+    structuredDB: {
+      memory: [{ id: 'nm1', characterId: 'c1', content: '记得带伞', timestamp: 1700000000000 }],
+      summaryEntries: [{ id: 'ns1', characterId: 'c1', summary: '上周聊了旅行' }],
+    },
+  },
+});
+assert.equal(nuojijiMemories.length, 2, '糯叽机的 memory 和 summaryEntries 都该读出来');
+assert.equal(nuojijiMemories[0].content, '记得带伞');
+
+// 330 → 糯叽机：记忆摊平进 structuredDB.memory
+const ephoneWithMemory = {
+  version: 3,
+  data: {
+    chats: [{
+      id: 'c1', name: '阿糯', isGroup: false, history: [],
+      longTermMemory: [{ content: '用户怕黑', timestamp: 1700000000000 }],
+    }],
+  },
+};
+const nuojijiPlain = context.toNuojijiBackup('ephone', ephoneWithMemory);
+assert.deepEqual(plain(nuojijiPlain.data.structuredDB.memory), [], '默认不转记忆');
+
+const nuojijiWithMemory = context.toNuojijiBackup('ephone', ephoneWithMemory, { memory: true });
+assert.equal(nuojijiWithMemory.data.structuredDB.memory.length, 1);
+assert.equal(nuojijiWithMemory.data.structuredDB.memory[0].content, '用户怕黑');
+assert.equal(nuojijiWithMemory.data.structuredDB.memory[0].characterId, 'c1');
+
+// 没勾选项时，各家的记忆字段都不该冒出来
+const handPlain = context.toSullyBackup('sully-hand', 'ephone', ephoneWithMemory);
+assert.equal(handPlain.memoryNodes, undefined);
+const csyPlain = context.toSullyBackup('sully-csy', 'ephone', ephoneWithMemory);
+assert.equal(csyPlain.vectorMemories, undefined);
+
+// ===== 表情包单独转换 =====
+const stickerSource = {
+  version: 3,
+  data: {
+    chats: [],
+    userStickers: [
+      { id: 's1', name: '开心', url: 'data:image/png;base64,AAA' },
+      { id: 's2', name: '无图', url: '' },
+    ],
+  },
+};
+const pulled = context.extractStickers('ephone', stickerSource);
+assert.equal(pulled.length, 1, '没有图片地址的条目该丢掉');
+assert.equal(pulled[0].name, '开心', '名字必须原样保留：聊天记录是按名字引用表情的');
+
+const stickerToHand = context.buildStickerOnlyBackup('sully-hand', pulled);
+assert.equal(stickerToHand.version, 3);
+assert.equal(stickerToHand.savedEmojis[0].name, '开心');
+assert.equal(stickerToHand.savedEmojis[0].url, 'data:image/png;base64,AAA');
+assert.equal(stickerToHand.characters, undefined, '只转表情的文件不该带角色表');
+
+const stickerToWanwan = context.buildStickerOnlyBackup('wanwan', pulled);
+assert.equal(stickerToWanwan.appName, '弯弯');
+assert.equal(stickerToWanwan.stickers[0].image, 'data:image/png;base64,AAA');
+
+const stickerToEphone = context.buildStickerOnlyBackup('ephone', pulled);
+assert.equal(stickerToEphone.version, 3);
+assert.equal(stickerToEphone.data.userStickers[0].name, '开心');
+
+const stickerToOctopus = context.buildStickerOnlyBackup('octopus', pulled);
+assert.equal(stickerToOctopus.myStickers[0].url, 'data:image/png;base64,AAA');
+
+// Float 的表情是图集：名字在 KV 里，图片在主题素材库里靠 assetId 关联
+const floatStickerSource = {
+  kv: {
+    ai_phone_sticker_packs_v1: [{
+      id: 'pack1', name: '默认',
+      stickers: [
+        { id: 'fs1', name: '摸头', assetId: 'asset1' },
+        { id: 'fs2', name: '外链', externalUrl: 'https://example.com/a.png' },
+        { id: 'fs3', name: '断链', assetId: 'missing' },
+      ],
+    }],
+  },
+  idb: {
+    ai_phone_theme_db_v1: {
+      assets: [{ id: 'asset1', dataUrl: 'data:image/png;base64,BBB' }],
+    },
+  },
+};
+const floatStickers = context.extractStickers('float', floatStickerSource);
+assert.equal(floatStickers.length, 2, '断链的表情该跳过');
+assert.equal(floatStickers[0].url, 'data:image/png;base64,BBB', 'assetId 该查回素材库里的 dataUrl');
+assert.equal(floatStickers[1].url, 'https://example.com/a.png', '外链表情该直接用 externalUrl');
+
+// 糯叽机的表情分散在 stickers / stickerStore 两处
+const nuojijiStickers = context.extractStickers('nuojiji', {
+  data: {
+    structuredDB: {
+      stickers: [{ id: 'n1', name: '点赞', url: 'data:image/png;base64,CCC' }],
+      stickerStore: [{ id: 'n2', name: '鼓掌', image: 'data:image/png;base64,DDD' }],
+      kaomojis: [{ id: 'k1', name: '(・∀・)' }],
+    },
+  },
+});
+assert.equal(nuojijiStickers.length, 2, '颜文字没有图片，不该混进来');
+assert.equal(nuojijiStickers[1].url, 'data:image/png;base64,DDD');
 
 console.log('converter tests passed');

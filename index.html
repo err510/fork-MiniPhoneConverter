@@ -108,6 +108,8 @@
       }
       .hint { color: var(--muted); font-size: 13px; }
       .hint b { color: var(--ink-soft); font-weight: 650; }
+      .notes-jump { color: var(--ink-soft); text-decoration-color: var(--line-strong); text-underline-offset: 2px; }
+      .notes-jump:hover { color: var(--ink); }
 
       button, .download {
         display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px;
@@ -148,6 +150,65 @@
       .notice.error { border-left-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
       .details { margin-top: 12px; color: var(--muted); font-size: 13px; white-space: pre-line; }
       footer { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+      .opt-list { display: flex; flex-direction: column; gap: 8px; }
+      .opt {
+        display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px;
+        border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+      }
+      .opt:hover { border-color: var(--line-strong); background: #fafafb; }
+      .opt:has(input:checked) { border-color: var(--ink); background: var(--tint); }
+      .opt:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+      .opt.is-disabled { cursor: not-allowed; opacity: .5; }
+      .opt.is-disabled:hover { border-color: var(--line); background: none; }
+      .opt input { margin-top: 2px; accent-color: var(--ink); }
+      .opt-body strong { display: block; font-size: 14px; font-weight: 650; }
+      .opt-body span { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .opt-sub { margin-left: 26px; }
+      .section-gap { margin-top: 18px; }
+
+      .callout {
+        margin-top: 16px; border: 1px solid var(--line-strong); border-radius: 10px;
+        padding: 12px 14px; background: var(--tint); color: var(--ink-soft); font-size: 13px; line-height: 1.65;
+      }
+      .callout strong, .callout b { color: var(--ink); font-weight: 650; }
+      .callout.warn { border-color: #e2beb5; background: var(--danger-soft); color: var(--danger); }
+      .callout.warn strong, .callout.warn b { color: var(--danger); }
+      .tag-new {
+        display: inline-block; margin-left: 7px; border: 1px solid var(--danger); border-radius: 999px;
+        padding: 0 7px; color: var(--danger); font-size: 11px; font-weight: 650; letter-spacing: .02em;
+        vertical-align: 2px;
+      }
+
+      /* 注意事项默认折叠：大部分人只想转个文件，但真出问题时得能在页面里找到解释，
+         不能只写在仓库的 README 里。 */
+      .notes summary {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 18px 26px; cursor: pointer; font-size: 15px; font-weight: 650; list-style: none;
+      }
+      .notes summary::-webkit-details-marker { display: none; }
+      .notes summary::after { content: "展开"; color: var(--muted); font-size: 12px; font-weight: 600; }
+      .notes[open] summary::after { content: "收起"; }
+      .notes summary:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 12px; }
+      .notes-body { border-top: 1px solid var(--line); padding: 22px 26px 26px; }
+      .notes-group + .notes-group { margin-top: 20px; padding-top: 20px; border-top: 1px dashed var(--line); }
+      .notes-group h3 { margin: 0 0 7px; font-size: 14px; font-weight: 650; }
+      .notes-group p, .notes-group ul { color: var(--ink-soft); font-size: 13px; line-height: 1.7; }
+      .notes-group p + p, .notes-group p + ul, .notes-group ul + p { margin-top: 8px; }
+      .notes-group ul { margin: 0; padding-left: 20px; }
+      .notes-group li + li { margin-top: 4px; }
+      .notes-group code {
+        border-radius: 4px; padding: 1px 4px; background: var(--tint);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px;
+      }
+      .table-scroll { margin-top: 10px; overflow-x: auto; }
+      .note-table { width: 100%; min-width: 460px; border-collapse: collapse; font-size: 12.5px; }
+      .note-table th, .note-table td {
+        border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; line-height: 1.6;
+      }
+      .note-table th { background: var(--tint); font-weight: 650; white-space: nowrap; }
+
+      @media (max-width: 560px) { .opt-sub { margin-left: 12px; } }
 
       @media (max-width: 720px) {
         .shell { padding: 34px 16px 44px; }
@@ -242,10 +303,40 @@
               </label>
             </div>
           </div>
+
+          <div class="step">
+            <div class="step-head"><span class="step-num">03</span><h2>附加选项<span class="tag-new">新功能</span></h2></div>
+            <p class="step-note">默认只转角色、聊天、世界书、表情与基础设置。下面这些结构各家差别较大，需要时再打开。</p>
+            <div class="opt-list">
+              <label class="opt" id="opt-memory-label">
+                <input type="checkbox" id="opt-memory" />
+                <span class="opt-body">
+                  <strong>一并转换长期记忆</strong>
+                  <span id="opt-memory-note">记忆正文按目标格式重建。目标独有的字段（csy 的标题、手抓的房间与情绪）用降级规则补齐，不调用任何 AI。</span>
+                </span>
+              </label>
+              <label class="opt opt-sub" id="opt-vectors-label">
+                <input type="checkbox" id="opt-vectors" />
+                <span class="opt-body">
+                  <strong>尽量保留记忆向量</strong>
+                  <span id="opt-vectors-note">只有源和目标用的是同一个 embedding 模型时才搬得动，否则只搬正文，由目标小手机自己重新向量化。</span>
+                </span>
+              </label>
+            </div>
+            <div class="callout warn">
+              <strong>记忆转换是刚加的，作者本人还没有实测过。</strong>
+              转出来的文件请先在目标小手机里试导入，确认记忆真的读出来了再删掉旧备份。
+              导入后读不到记忆属于已知风险，尤其是<b>糯叽机 v5</b>：它的记忆字段名是按读取端反推的，源码不在手上。
+              详见页面底部的<b>注意事项</b>。
+            </div>
+          </div>
         </section>
 
         <div class="actionbar">
-          <p class="hint"><b>导入会覆盖目标端的现有数据。</b>请先在目标小手机里导出一份当前备份再导入。</p>
+          <p class="hint">
+            <b>导入会覆盖目标端的现有数据。</b>请先在目标小手机里导出一份当前备份再导入。
+            转换范围与已知风险见<a class="notes-jump" href="#notes">注意事项</a>。
+          </p>
           <button id="convert-button" class="primary" type="button" disabled>转换备份</button>
         </div>
 
@@ -268,6 +359,106 @@
           <div id="result-details" class="details"></div>
         </section>
 
+        <section class="surface section-gap" aria-label="表情包单独转换">
+          <div class="step">
+            <div class="step-head"><span class="step-num">＋</span><h2>只转表情包<span class="tag-new">新功能</span></h2></div>
+            <p class="step-note">
+              各家的表情库都是「名字 + 图片」的扁平结构，可以脱离角色和聊天单独搬。
+              生成的仍然是目标小手机的原生备份文件，但只填表情相关字段。
+            </p>
+            <div class="callout warn">
+              <strong>这个模块也是刚加的，作者本人还没有实测过。</strong>
+              另外 <b>330 / 兔k机 / yuan改uwu</b> 的导入是「先清空再写入」，
+              拿只有表情的文件去导入会把角色和聊天一起清掉，选这类目标时下面会再警告一次。
+            </div>
+            <label class="dropzone" id="sticker-dropzone">
+              <span class="dz-mark" aria-hidden="true">☺</span>
+              <span class="dz-title" id="sticker-dz-title">把任意小手机的备份拖到这里，或点击选择</span>
+              <span class="dz-sub" id="sticker-dz-sub">只读取里面的表情库，其余数据一概不动</span>
+              <input id="sticker-file" type="file" />
+            </label>
+            <p class="probe" id="sticker-probe" aria-live="polite"></p>
+            <div class="target-grid" id="sticker-target-grid" style="margin-top: 16px"></div>
+            <div class="notice" id="sticker-warning" style="display: none"></div>
+            <div class="actionbar" style="padding-left: 0; padding-right: 0">
+              <p class="hint" id="sticker-hint">
+                聊天记录里的表情是<b>按名字</b>引用的，所以转换时名字原样保留，导入后老消息才认得出来。
+              </p>
+              <button id="sticker-button" class="primary" type="button" disabled>只导出表情包</button>
+            </div>
+            <a id="sticker-download" class="download" href="#" download style="display: none">下载表情包备份</a>
+          </div>
+        </section>
+
+        <details class="surface notes section-gap" id="notes">
+          <summary>注意事项（转换范围、记忆、表情包、隐私）</summary>
+          <div class="notes-body">
+            <div class="notes-group">
+              <h3>先说风险</h3>
+              <ul>
+                <li><b>长期记忆</b>和<b>只转表情包</b>是 2026.9.3 刚加的，作者本人还没有实测过。请先在目标小手机里试导入，确认数据真的读出来了，再删掉旧备份。</li>
+                <li>导入备份会<b>覆盖目标端的现有数据</b>。导入前先在目标小手机里导出一份它自己的备份。</li>
+                <li>转换只在浏览器里进行，不上传文件。但 API Key、Token、接口地址会<b>按源备份原样保留</b>到生成文件里，要分享给别人的话请先自行删除这些字段。</li>
+              </ul>
+            </div>
+
+            <div class="notes-group">
+              <h3>转换范围</h3>
+              <p><b>默认会转</b>：角色、群聊、消息记录、头像、世界书、表情包、基础设置。</p>
+              <p><b>打开开关才转</b>：长期记忆。</p>
+              <p><b>不会转</b>：各小手机独有的应用数据（商城、小游戏、记账、朋友圈、日记等）。这些没有跨项目的等价结构，硬塞过去只会变成一堆脏数据，所以不做，也不承诺无损迁移。</p>
+            </div>
+
+            <div class="notes-group">
+              <h3>长期记忆（可选，默认关闭）</h3>
+              <p>各家的记忆存法差别很大，转换器只搬<b>记忆正文</b>，按目标格式重建条目，全程不调用任何 AI。目标独有的字段用固定的降级规则补齐：标题取正文前 6 字，房间统一落客厅，情绪一律 neutral。</p>
+              <div class="table-scroll">
+                <table class="note-table">
+                  <thead>
+                    <tr><th>小手机</th><th>记忆存在哪</th><th>说明</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>330</td><td><code>chats[].longTermMemory[]</code></td><td>纯文本</td></tr>
+                    <tr><td>兔k机</td><td><code>history</code> 里 <code>type: "summary"</code> 的消息</td><td>纯文本。和 330 是同一个导出格式但读法不同，所以往这个目标写时两边各留一份，<code>summary</code> 消息带 <code>isHidden</code>，330 那边不会多出气泡</td></tr>
+                    <tr><td>yuan改uwu</td><td><code>chats[].longTermMemory[]</code></td><td>纯文本</td></tr>
+                    <tr><td>糯叽机 v5</td><td><code>structuredDB.memory[]</code></td><td>纯文本。<b>字段名是按读取端反推的</b>，源码不在手上，导入后读不到属于预期内的风险</td></tr>
+                    <tr><td>csy 糯米机</td><td><code>vectorMemories[]</code></td><td>带向量，重要度 1-10</td></tr>
+                    <tr><td>手抓糯米机</td><td><code>memoryNodes[]</code> + <code>memoryVectors[]</code></td><td>带向量，重要度 1-10</td></tr>
+                    <tr><td>Float 小手机</td><td><code>ai_phone_memory_db_v1</code> 的 <code>memories</code></td><td>带向量，重要度 0-1（转换时自动换算）</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p><b>没有长期记忆系统</b>：章鱼机、zz 小手机、弯弯小手机、miya 小手机、1900版uwu。选这些当目标时开关会自动灰掉。（几家看着像但不是：兔k机的「我们的回忆」是纪念日卡片，弯弯的 <code>chatMemory_*</code> 只是上下文条数，miya 的 <code>memories</code> 是相册回忆。）</p>
+              <p><b>向量</b>只有在源和目标用同一个 embedding 模型时才搬得动，否则只搬正文，让目标小手机自己重新向量化：</p>
+              <ul>
+                <li>csy ↔ 手抓：默认都是 <code>BAAI/bge-m3</code>（1024 维），可以直接搬。硅基流动的 <code>Pro/</code> 计费档前缀视为同一个模型。</li>
+                <li>Float：默认是 <code>text-embedding-3-small</code>（1536 维），和上面两家的向量空间对不上，只搬正文。</li>
+              </ul>
+            </div>
+
+            <div class="notes-group">
+              <h3>只转表情包</h3>
+              <p>只读源备份里的表情库，只写目标格式的表情字段，不碰角色和聊天。适合「只想把表情搬过去，不想动现有数据」的场景。</p>
+              <p>聊天记录里的表情是<b>按名字</b>引用的，所以转换时名字原样保留，导入后老消息才认得出来。</p>
+              <p>能这么用是因为 Float / csy / 手抓 的导入器是「字段存在才处理」的合并式，缺字段的文件只会更新表情库。<b>330 / 兔k机 / yuan改uwu 不是</b>：它们的导入会先把所有表清空再写入，拿只有表情的文件去导入会连角色和聊天一起清掉。想给它们只补表情，请在它自带的表情管理里逐个添加，或者改用上面的整包转换。</p>
+              <p>Float 的表情是按图集分组的（<code>ai_phone_sticker_packs_v1</code>）。转出去时会摊平成扁平列表；转进 Float 的图集分组暂时不做。</p>
+            </div>
+
+            <div class="notes-group">
+              <h3>导入位置</h3>
+              <ul>
+                <li><b>330 / 兔k机</b>：生成 <code>version: 3</code> 的 330 兼容 JSON。兔k机走「从 330 格式导入」，330 走原生备份导入。</li>
+                <li><b>章鱼机 / 1900版uwu</b>：生成 Gzip 压缩的 <code>.ee</code>，走「导入数据」。</li>
+                <li><b>zz 小手机</b>：设置里的「导入 JSON」。</li>
+                <li><b>手抓 / csy 糯米机</b>：设置里的「导入备份 (.zip / .json)」。</li>
+                <li><b>糯叽机 v5</b>：备份导入功能。仅保证通用聊天数据、角色、群聊、世界书和头像，专属应用数据会是空值或默认值。</li>
+                <li><b>弯弯小手机</b>：设置里的「导入备份」。世界书会写进弯弯的 <code>lorebooks</code> 配置，一律按全局注入，要绑定到单个角色请导入后自行调整。</li>
+                <li><b>Float 小手机</b>：「数据管理 → 导入备份」。聊天、角色卡、设置分属不同模块，按模块勾选导入时要全部勾上才完整。</li>
+              </ul>
+            </div>
+          </div>
+        </details>
+
         <footer>转换器不会访问网络，也不会读取任何小手机页面的本地数据库。只会处理你手动选择的文件。</footer>
       </main>
     </div>
@@ -281,6 +472,12 @@
       const convertButton = document.getElementById("convert-button");
       const result = document.getElementById("result");
       const downloadLink = document.getElementById("download-link");
+      const memoryToggle = document.getElementById("opt-memory");
+      const memoryToggleLabel = document.getElementById("opt-memory-label");
+      const memoryToggleNote = document.getElementById("opt-memory-note");
+      const vectorToggle = document.getElementById("opt-vectors");
+      const vectorToggleLabel = document.getElementById("opt-vectors-label");
+      const vectorToggleNote = document.getElementById("opt-vectors-note");
       let selectedFile = null;
       let previousObjectUrl = null;
       // 选完文件就先解析一遍存下来，点“转换备份”时直接复用。
@@ -288,6 +485,81 @@
       let detected = null;
       // 连着换文件时，先发的解析可能后返回；用这个序号把过期结果丢掉。
       let probeToken = 0;
+
+      // ───────── 记忆选项的可用性 ─────────
+      // 有长期记忆系统的小手机就这几家（其余是查过源码确认没有的：
+      // 章鱼机、zz、1900版uwu 完全没有；兔k机的「回忆」是纪念日卡片、
+      // 弯弯的 chatMemory 只是上下文条数、miya 的 memories 是相册回忆，都不是这回事）。
+      const MEMORY_CAPABLE = {
+        ephone: "330 / 兔k机",
+        yuanuwu: "yuan改uwu",
+        nuojiji: "糯叽机 v5",
+        "sully-csy": "csy 糯米机",
+        "sully-hand": "手抓糯米机",
+        float: "Float 小手机",
+      };
+      // 存了 embedding 向量的三家。默认模型：csy 与手抓都是 BAAI/bge-m3（1024 维），
+      // Float 是 text-embedding-3-small（1536 维），所以只有 csy ↔ 手抓 的向量能直接搬。
+      const MEMORY_VECTOR_CAPABLE = new Set(["sully-csy", "sully-hand", "float"]);
+
+      function currentTarget() {
+        return document.querySelector('input[name="target"]:checked')?.value || "ephone";
+      }
+
+      function setOptionEnabled(labelElement, inputElement, enabled) {
+        labelElement.classList.toggle("is-disabled", !enabled);
+        inputElement.disabled = !enabled;
+        if (!enabled) inputElement.checked = false;
+      }
+
+      function refreshMemoryOptions() {
+        const target = currentTarget();
+        const format = detected?.source?.format || null;
+        const targetName = MEMORY_CAPABLE[target];
+
+        if (!targetName) {
+          setOptionEnabled(memoryToggleLabel, memoryToggle, false);
+          memoryToggleNote.textContent = "这个目标小手机没有长期记忆系统，没有能落脚的地方。";
+        } else if (format && !MEMORY_CAPABLE[format]) {
+          setOptionEnabled(memoryToggleLabel, memoryToggle, false);
+          memoryToggleNote.textContent = `${detected.source.sourceLabel} 没有长期记忆，这个备份里没有能转的记忆。`;
+        } else {
+          setOptionEnabled(memoryToggleLabel, memoryToggle, true);
+          memoryToggleNote.textContent = format
+            ? `把 ${MEMORY_CAPABLE[format]} 的记忆重建成 ${targetName} 的格式。目标独有的字段（csy 的标题、手抓的房间与情绪）用降级规则补齐，不调用任何 AI。`
+            : "记忆正文按目标格式重建。目标独有的字段（csy 的标题、手抓的房间与情绪）用降级规则补齐，不调用任何 AI。";
+        }
+
+        // 向量：源和目标都得存向量，而且得是同一个 embedding 模型。
+        const vectorPossible = Boolean(
+          memoryToggle.checked && format &&
+          MEMORY_VECTOR_CAPABLE.has(format) && MEMORY_VECTOR_CAPABLE.has(target) &&
+          normalizeEmbeddingModel(MEMORY_TARGET_EMBEDDING[format]) ===
+            normalizeEmbeddingModel(MEMORY_TARGET_EMBEDDING[target]),
+        );
+        setOptionEnabled(vectorToggleLabel, vectorToggle, vectorPossible);
+        if (!memoryToggle.checked) {
+          vectorToggleNote.textContent = "先打开上面的「一并转换长期记忆」。";
+        } else if (!format) {
+          vectorToggleNote.textContent = "先选一个备份文件，才能判断向量搬不搬得动。";
+        } else if (!MEMORY_VECTOR_CAPABLE.has(format)) {
+          vectorToggleNote.textContent = `${MEMORY_CAPABLE[format] || detected.source.sourceLabel} 的记忆是纯文本，没有向量可搬。`;
+        } else if (!MEMORY_VECTOR_CAPABLE.has(target)) {
+          vectorToggleNote.textContent = `${targetName || "这个目标"} 不存向量，只搬正文。`;
+        } else if (!vectorPossible) {
+          vectorToggleNote.textContent =
+            `两边的 embedding 模型不一样（${MEMORY_TARGET_EMBEDDING[format]} → ${MEMORY_TARGET_EMBEDDING[target]}），` +
+            "向量空间对不上，只搬正文，导入后由目标小手机重新向量化。";
+        } else {
+          vectorToggleNote.textContent =
+            `两边默认都用 ${MEMORY_TARGET_EMBEDDING[target]}，向量可以原样搬过去，导入后不用重新跑 embedding。`;
+        }
+      }
+
+      memoryToggle.addEventListener("change", refreshMemoryOptions);
+      document.querySelectorAll('input[name="target"]').forEach((radio) => {
+        radio.addEventListener("change", refreshMemoryOptions);
+      });
 
       function formatSize(bytes) {
         if (!Number.isFinite(bytes)) return "";
@@ -313,12 +585,14 @@
             ` · 角色 ${stats.characters} · 群聊 ${stats.groups} · 消息 ${stats.messages} · 世界书 ${stats.worldBooks}`,
           );
           convertButton.disabled = false;
+          refreshMemoryOptions();
         } catch (error) {
           if (token !== probeToken) return;
           console.error(error);
           probe.className = "probe visible bad";
           probe.textContent = error.message || "无法读取这个文件。";
           convertButton.disabled = true;
+          refreshMemoryOptions();
         }
       }
 
@@ -327,6 +601,7 @@
         detected = null;
         probeToken += 1;
         convertButton.disabled = true;
+        refreshMemoryOptions();
         result.classList.remove("visible");
         dropzone.classList.toggle("has-file", Boolean(selectedFile));
         if (!selectedFile) {
@@ -837,6 +1112,13 @@
         return data.version === 3 && data.data ? data.data : data;
       }
 
+      // 糯叽机的容器是 data.structuredDB，外层没有 version:3，
+      // 所以不能走 sourceData()（那个只在 version===3 时才下钻一层）。
+      function nuojijiStructured(rawData) {
+        return (rawData && rawData.data && rawData.data.structuredDB) ||
+          (rawData && rawData.structuredDB) || {};
+      }
+
       function firstRecord(value) {
         return Array.isArray(value) ? (value[0] || {}) : (value && typeof value === "object" ? value : {});
       }
@@ -987,7 +1269,7 @@
           data: {
             chats: [...privateChats, ...groups],
             worldBooks,
-            userStickers: [],
+            userStickers: nuojijiStickersToNormalized(rawBackup),
             apiConfig: nuojijiApiSettings(structured),
             globalSettings: userProfile,
             customIcons: {},
@@ -1002,7 +1284,7 @@
         return { ...value };
       }
 
-      function ephoneDataForNuojiji(sourceFormat, rawData) {
+      function ephoneDataForNuojiji(sourceFormat, rawData, options = {}) {
         if (sourceFormat === "nuojiji") return nuojijiToEphone(rawData).data;
         if (sourceFormat === "octopus") {
           const chats = [
@@ -1019,7 +1301,7 @@
           ];
           return { chats, worldBooks: asArray(rawData.worldBooks), userStickers: asArray(rawData.myStickers), apiConfig: copyNuojijiApiSettings(rawData.apiSettings), globalSettings: { name: "我", avatar: "", bio: "" }, customIcons: rawData.customIcons || {}, wallpaper: rawData.wallpaper || "" };
         }
-        const converted = toEphoneCompatible(sourceFormat, rawData).data;
+        const converted = toEphoneCompatible(sourceFormat, rawData, options).data;
         return { ...converted, apiConfig: copyNuojijiApiSettings(firstRecord(converted.apiConfig)), globalSettings: firstRecord(converted.globalSettings) };
       }
 
@@ -1043,8 +1325,8 @@
         });
       }
 
-      function toNuojijiBackup(sourceFormat, rawData) {
-        const data = ephoneDataForNuojiji(sourceFormat, rawData);
+      function toNuojijiBackup(sourceFormat, rawData, options = {}) {
+        const data = ephoneDataForNuojiji(sourceFormat, rawData, options);
         const chats = asArray(data.chats);
         const characters = chats.filter((chat) => !chat.isGroup).map((chat) => {
           const settings = chat.settings || {};
@@ -1091,6 +1373,26 @@
           messages.push(converted);
         }));
         const profile = firstRecord(data.globalSettings);
+        // 记忆：ephoneDataForNuojiji 已经把外部记忆折进 chats[].longTermMemory，
+        // 这里再摊平成糯叽机的 structuredDB.memory。
+        // 注意：糯叽机 v5 的源码不在本机，memory 条目的字段名是按转换器读取端反推的
+        //（characterId / content / timestamp），如果它那边字段不同，导入后可能读不到。
+        const memoryRecords = [];
+        if (options.memory) {
+          chats.forEach((chat) => asArray(chat.longTermMemory).forEach((entry, index) => {
+            const content = typeof entry === "string" ? entry : String(entry?.content || entry?.text || entry?.summary || "");
+            if (!content) return;
+            const timestamp = asTimestamp(typeof entry === "object" ? (entry.timestamp || entry.createdAt) : Date.now());
+            memoryRecords.push({
+              id: `mem_${timestamp}_${memoryRecords.length}_${index}`,
+              characterId: String(chat.id),
+              userId: "user_imported",
+              content,
+              timestamp,
+              createdAt: timestamp,
+            });
+          }));
+        }
         return {
           version: 5,
           timestamp: Date.now(),
@@ -1104,9 +1406,10 @@
               friendRequests: [],
               worldBooks: nuojijiWorldBooks(data.worldBooks),
               globalSettings: [{ key: "apiSettings", value: copyNuojijiApiSettings(data.apiConfig) }],
-              stickers: [], kaomojis: [],
+              // 同上，字段名按读取端反推（id/name/url），颜文字 kaomojis 无图片不填。
+              stickers: normalizeStickerList(data.userStickers), kaomojis: [],
               users: [{ uid: "user_imported", id: "user_imported", name: profile.name || "我", signature: profile.bio || "", intro: profile.bio || "", avatarRef: null }],
-              userState: {}, userPosts: [], chatSettings: [], messages, favorites: [], memory: [], summaryEntries: [],
+              userState: {}, userPosts: [], chatSettings: [], messages, favorites: [], memory: memoryRecords, summaryEntries: [],
               callLogs: [], roleStickers: [], tmSessions: [], tmStories: [], multiSceneSessions: [], multiSceneStories: [],
               multiSceneCastSettings: [], multiSceneSessionSettings: [], multiSceneSessionSummaries: [], customNoises: [], customBgm: [],
               flashMoments: [], groupSettings: [], userLinks: [], userMessages: [], ttsAudio: [], forumData: {}, calendarData: {},
@@ -1718,7 +2021,7 @@
           }
           const contact = contactById.get(String(session.contactId)) || {};
           const character = charById.get(String(contact.characterId)) || {};
-          return toEphoneChat({
+          return Object.assign(toEphoneChat({
             ...character,
             id: session.id,
             originalCharId: character.id,
@@ -1728,7 +2031,7 @@
             background: session.backgroundImage || "",
             customBubbleCss: session.customCSS || "",
             history: toHistory(session.id, false),
-          }, false);
+          }, false), { memoryCharId: String(character.id || "") });
         });
 
         // 未开过会话的角色卡也要带走，否则导入后角色直接丢失。
@@ -1737,7 +2040,7 @@
           .filter(Boolean));
         const orphanChats = characters
           .filter((character) => !usedCharacterIds.has(String(character.id)))
-          .map((character) => toEphoneChat({
+          .map((character) => Object.assign(toEphoneChat({
             ...character,
             id: `float_char_${character.id}`,
             originalCharId: character.id,
@@ -1745,7 +2048,7 @@
             avatar: character.avatar || "",
             persona: character.persona || character.personality || "",
             history: [],
-          }, false));
+          }, false), { memoryCharId: String(character.id || "") }));
 
         const identities = asArray(rawData.kv?.ai_phone_user_identities_v1);
         const identity = identities.find((item) => item && typeof item === "object") || {};
@@ -1756,7 +2059,7 @@
           data: {
             chats: [...chats, ...orphanChats],
             worldBooks: floatWorldBooks(rawData),
-            userStickers: [],
+            userStickers: floatStickersToNormalized(rawData),
             apiConfig: asArray(rawData.kv?.ai_phone_api_configs_v1),
             globalSettings: [{
               name: identity.name || "我",
@@ -1816,7 +2119,24 @@
           }));
       }
 
-      function toEphoneCompatible(sourceFormat, rawData) {
+      // options.memory 为真时，把源里独立存放的记忆（csy / 手抓 / Float / 糯叽机）
+      // 折回 EPhone 形状的 chats[].longTermMemory。EPhone 家族之间互转不需要这一步：
+      // 记忆本来就长在 chat 上，跟着 { ...chat } 一起过去了。
+      function toEphoneCompatible(sourceFormat, rawData, options = {}) {
+        const result = toEphoneCompatibleRaw(sourceFormat, rawData);
+        if (options.memory && MEMORY_EXTERNAL_SOURCES.has(sourceFormat)) {
+          result.data.chats = applyMemoriesToEphoneChats(result.data.chats, extractMemories(sourceFormat, rawData));
+        }
+        if (options.memory && options.summaryMessages) {
+          result.data.chats = ensureEphoneSummaryMessages(result.data.chats);
+        }
+        return result;
+      }
+
+      // 记忆不挂在聊天上、需要单独搬运的源格式。
+      const MEMORY_EXTERNAL_SOURCES = new Set(["sully-hand", "sully-csy", "float", "nuojiji"]);
+
+      function toEphoneCompatibleRaw(sourceFormat, rawData) {
         if (sourceFormat === "nuojiji") return nuojijiToEphone(rawData);
         if (sourceFormat === "wanwan") return wanwanToEphone(rawData);
         if (sourceFormat === "float") return floatToEphone(rawData);
@@ -1850,6 +2170,452 @@
             userStickers: asArray(rawData.myStickers),
             apiConfig: rawData.apiSettings ? [rawData.apiSettings] : [],
             globalSettings: rawData.globalSettings ? [rawData.globalSettings] : [],
+          },
+        };
+      }
+
+      // ───────────────────────── 记忆迁移 ─────────────────────────
+      // 各家记忆结构分两类：
+      //   A 组（纯文本）：330/兔k机 chats[].longTermMemory[]、糯叽机 structuredDB.memory[]
+      //   B 组（结构化）：csy vectorMemories[]、手抓 memoryNodes[]+memoryVectors[]、Float memories[]
+      // 统一中间格式 NormalizedMemory，转换全部走「源 → 中间 → 目标」。
+      // 中间格式的 importance 一律用 1-10（B 组里两家的原生刻度），Float 的 0-1 在读写两端换算。
+
+      const MEMORY_ROOMS = new Set([
+        "living_room", "bedroom", "study", "user_room", "self_room", "attic", "windowsill",
+      ]);
+
+      // 手抓的向量在 IndexedDB 里是 Float32 的原始字节（Uint8Array），
+      // csy 存的是普通 number[]。两边都可能出现，读的时候统一成 number[]。
+      function memoryVectorToNumbers(vector) {
+        if (!vector) return null;
+        if (Array.isArray(vector)) return vector.every((n) => typeof n === "number") ? vector : null;
+        // 备份 JSON 里 Uint8Array 会被序列化成 {"0":12,"1":34,...} 这样的对象
+        if (typeof vector === "object") {
+          const keys = Object.keys(vector);
+          if (!keys.length) return null;
+          const bytes = new Uint8Array(keys.length);
+          for (let index = 0; index < keys.length; index += 1) {
+            const value = Number(vector[index]);
+            if (!Number.isFinite(value)) return null;
+            bytes[index] = value;
+          }
+          // 字节数必须是 4 的倍数才可能是 Float32 序列
+          if (bytes.length % 4 !== 0) return null;
+          return Array.from(new Float32Array(bytes.buffer));
+        }
+        return null;
+      }
+
+      // 反向：number[] → Float32 字节，写给手抓。
+      // 备份是 JSON，没法放真正的 Uint8Array，写成 {0:..,1:..} 对象与 IndexedDB 反序列化后的形态一致。
+      function memoryVectorToBytes(numbers) {
+        const floats = Float32Array.from(numbers);
+        const bytes = new Uint8Array(floats.buffer);
+        const output = {};
+        for (let index = 0; index < bytes.length; index += 1) output[index] = bytes[index];
+        return output;
+      }
+
+      // 只比对模型本体：手抓自己的 normalizeModelName 会剥掉硅基流动的 Pro/ 计费档前缀，
+      // 这里保持一致，否则 Pro/BAAI/bge-m3 → BAAI/bge-m3 会被误判成换了模型。
+      function normalizeEmbeddingModel(model) {
+        return String(model || "").replace(/^Pro\//i, "").trim().toLowerCase();
+      }
+
+      const MEMORY_TARGET_EMBEDDING = {
+        "sully-hand": "BAAI/bge-m3",
+        "sully-csy": "BAAI/bge-m3",
+        float: "text-embedding-3-small",
+      };
+
+      function clampImportance(value, fallback) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return fallback;
+        return Math.min(10, Math.max(1, Math.round(number)));
+      }
+
+      // 从各家备份里抽出统一格式的记忆。charId 尽量保留原始角色 ID，
+      // 写回目标时再按目标的角色 ID 体系重新绑定。
+      function extractMemories(sourceFormat, rawData) {
+        const memories = [];
+        const push = (item) => {
+          const content = typeof item.content === "string" ? item.content.trim() : "";
+          if (!content) return; // 空记忆没有迁移价值
+          memories.push({
+            id: item.id ? String(item.id) : `mem_${memories.length + 1}`,
+            charId: item.charId ? String(item.charId) : "",
+            content,
+            title: typeof item.title === "string" ? item.title : "",
+            importance: clampImportance(item.importance, 5),
+            createdAt: asTimestamp(item.createdAt || Date.now()),
+            mood: typeof item.mood === "string" ? item.mood : "",
+            room: MEMORY_ROOMS.has(item.room) ? item.room : "",
+            emotionalJourney: typeof item.emotionalJourney === "string" ? item.emotionalJourney : "",
+            tags: asArray(item.tags).map(String).filter(Boolean),
+            vector: Array.isArray(item.vector) && item.vector.length ? item.vector : null,
+            vectorModel: item.vectorModel ? String(item.vectorModel) : "",
+          });
+        };
+
+        if (sourceFormat === "sully-csy" || sourceFormat === "sully-hand") {
+          // csy：vectorMemories 自带向量；被 LLM 标记失效（deprecated）的不迁移。
+          asArray(rawData.vectorMemories).forEach((memory) => {
+            if (!memory || typeof memory !== "object" || memory.deprecated) return;
+            push({
+              id: memory.id, charId: memory.charId, content: memory.content,
+              title: memory.title, importance: memory.importance, createdAt: memory.createdAt,
+              emotionalJourney: memory.emotionalJourney,
+              vector: memoryVectorToNumbers(memory.vector), vectorModel: memory.modelId,
+            });
+          });
+          // 手抓：节点与向量分表，用 memoryId 关联。
+          const vectorByMemoryId = new Map();
+          asArray(rawData.memoryVectors).forEach((record) => {
+            if (!record || typeof record !== "object") return;
+            const numbers = memoryVectorToNumbers(record.vector);
+            if (numbers) vectorByMemoryId.set(String(record.memoryId), { numbers, model: record.model });
+          });
+          asArray(rawData.memoryNodes).forEach((node) => {
+            if (!node || typeof node !== "object") return;
+            const linked = vectorByMemoryId.get(String(node.id));
+            push({
+              id: node.id, charId: node.charId, content: node.content,
+              importance: node.importance, createdAt: node.createdAt,
+              mood: node.mood, room: node.room, tags: node.tags,
+              vector: linked?.numbers || null, vectorModel: linked?.model,
+            });
+          });
+          return memories;
+        }
+
+        if (sourceFormat === "float") {
+          const memoryDb = rawData.idb?.ai_phone_memory_db_v1 || {};
+          asArray(memoryDb.memories).forEach((entry) => {
+            if (!entry || typeof entry !== "object") return;
+            push({
+              id: entry.id, charId: entry.characterId, content: entry.content,
+              // Float 的 importance 是 0-1，换算到中间格式的 1-10
+              importance: Math.round(Number(entry.importance || 0) * 9) + 1,
+              createdAt: entry.createdAt,
+              vector: Array.isArray(entry.embedding) ? entry.embedding : null,
+              vectorModel: "text-embedding-3-small",
+            });
+          });
+          return memories;
+        }
+
+        if (sourceFormat === "nuojiji") {
+          const structured = nuojijiStructured(rawData);
+          asArray(structured.memory).forEach((entry) => {
+            if (!entry || typeof entry !== "object") return;
+            push({
+              id: entry.id, charId: entry.characterId || entry.charId,
+              content: entry.content || entry.text || entry.summary,
+              createdAt: entry.timestamp || entry.createdAt,
+            });
+          });
+          asArray(structured.summaryEntries).forEach((entry) => {
+            if (!entry || typeof entry !== "object") return;
+            push({
+              id: entry.id, charId: entry.characterId || entry.charId,
+              content: entry.content || entry.summary,
+              createdAt: entry.timestamp || entry.createdAt,
+            });
+          });
+          return memories;
+        }
+
+        // EPhone 家族：330 和 yuan改 用 chats[].longTermMemory[]，
+        // 兔k机是同一份备份格式但记忆存法不同 —— 它把总结当成 history 里
+        // type:"summary" 的消息（拼提示词时 filter(m => m.type === "summary")）。
+        // 两种都读，谁有就取谁。
+        asArray(sourceData(rawData).chats).forEach((chat) => {
+          if (!chat || typeof chat !== "object") return;
+          const charId = String(chat.memoryCharId || chat.originalCharId || chat.id || "");
+          asArray(chat.history).forEach((message) => {
+            if (!message || typeof message !== "object" || message.type !== "summary") return;
+            const content = String(message.content || message.text || "");
+            if (!content) return;
+            push({ id: message.id, charId, content, createdAt: message.timestamp });
+          });
+          asArray(chat.longTermMemory).forEach((entry) => {
+            if (typeof entry === "string") return push({ charId, content: entry });
+            if (!entry || typeof entry !== "object") return;
+            push({
+              id: entry.id, charId, content: entry.content || entry.text || entry.summary,
+              createdAt: entry.timestamp || entry.createdAt,
+            });
+          });
+        });
+        return memories;
+      }
+
+      // 把中间格式写回目标结构。needsAi 为 false 时用降级规则填充目标独有字段：
+      // title 取正文前 6 字，room 统一进客厅（living_room）。
+      function memoryTitleFallback(memory) {
+        if (memory.title) return memory.title.slice(0, 6);
+        return memory.content.replace(/\s+/g, "").slice(0, 6) || "记忆";
+      }
+
+      // 决定向量能不能跟着搬：源模型与目标默认模型是同一个才行。
+      // 不一致时只搬文本，由目标小手机自己重新向量化。
+      function memoryVectorUsable(memory, target) {
+        if (!memory.vector || !memory.vector.length) return false;
+        const targetModel = MEMORY_TARGET_EMBEDDING[target];
+        if (!targetModel) return false;
+        return normalizeEmbeddingModel(memory.vectorModel) === normalizeEmbeddingModel(targetModel);
+      }
+
+      function memoriesToCsy(memories, options) {
+        return memories.map((memory, index) => {
+          const keepVector = Boolean(options.keepVectors) && memoryVectorUsable(memory, "sully-csy");
+          return {
+            id: memory.id || `vmem-${memory.createdAt}-${index}`,
+            charId: memory.charId,
+            title: memory.title || memoryTitleFallback(memory),
+            content: memory.content,
+            emotionalJourney: memory.emotionalJourney || memory.mood || "",
+            importance: memory.importance,
+            mentionCount: 0,
+            lastMentioned: memory.createdAt,
+            createdAt: memory.createdAt,
+            // 没有可用向量时留空数组：csy 的检索会跳过无向量条目，等它自己补。
+            vector: keepVector ? memory.vector : [],
+            ...(keepVector ? { modelId: memory.vectorModel } : {}),
+            source: "import",
+          };
+        });
+      }
+
+      function memoriesToHand(memories, options) {
+        const nodes = [];
+        const vectors = [];
+        memories.forEach((memory, index) => {
+          const id = memory.id || `mem_${memory.createdAt}_${index}`;
+          // 显式转成 boolean：embedded 是要写进备份的字段，
+          // undefined 会被 JSON.stringify 直接吃掉，导入后这个字段就凭空消失了。
+          const keepVector = Boolean(options.keepVectors) && memoryVectorUsable(memory, "sully-hand");
+          nodes.push({
+            id,
+            charId: memory.charId,
+            content: memory.content,
+            // 源里没有房间信息时统一放客厅：客厅是有容量上限和衰减的日常区，
+            // 比塞进永不遗忘的房间更接近「来历不明的旧记忆」。
+            room: memory.room || "living_room",
+            tags: memory.tags,
+            importance: memory.importance,
+            mood: memory.mood || "neutral",
+            embedded: keepVector,
+            createdAt: memory.createdAt,
+            lastAccessedAt: memory.createdAt,
+            accessCount: 0,
+            origin: "system",
+          });
+          if (keepVector) {
+            vectors.push({
+              memoryId: id,
+              charId: memory.charId,
+              vector: memoryVectorToBytes(memory.vector),
+              dimensions: memory.vector.length,
+              model: memory.vectorModel,
+            });
+          }
+        });
+        return { nodes, vectors };
+      }
+
+      function memoriesToFloat(memories, options, nowIso) {
+        return memories.map((memory, index) => {
+          const keepVector = Boolean(options.keepVectors) && memoryVectorUsable(memory, "float");
+          const createdIso = new Date(memory.createdAt).toISOString();
+          return {
+            id: memory.id || `mem_${memory.createdAt}_${index}`,
+            characterId: memory.charId,
+            sourceApp: "chat",
+            type: "long_term",
+            content: memory.content,
+            ...(keepVector ? { embedding: memory.vector } : {}),
+            // Float 的 importance 是 0-1，从中间格式的 1-10 换算回去
+            importance: Math.min(1, Math.max(0, (memory.importance - 1) / 9)),
+            createdAt: createdIso,
+            updatedAt: nowIso,
+          };
+        });
+      }
+
+      // EPhone 家族：记忆按 charId 归位到对应聊天的 longTermMemory。
+      function applyMemoriesToEphoneChats(chats, memories) {
+        if (!memories.length) return chats;
+        const byCharId = new Map();
+        memories.forEach((memory) => {
+          const key = memory.charId;
+          if (!byCharId.has(key)) byCharId.set(key, []);
+          byCharId.get(key).push({ content: memory.content, timestamp: memory.createdAt });
+        });
+        return asArray(chats).map((chat) => {
+          // memoryCharId 是「记忆挂在谁名下」的原始 ID。Float 的会话 ID 和角色 ID 是两个东西
+          // （一个角色可以开多个会话），记忆记的是角色 ID，所以读的时候要单独留一份。
+          const matched = byCharId.get(String(chat.memoryCharId || chat.originalCharId || chat.id || ""));
+          if (!matched || !matched.length) return chat;
+          return {
+            ...chat,
+            longTermMemory: [...asArray(chat.longTermMemory), ...matched],
+          };
+        });
+      }
+
+      // 「330 / 兔k机」是同一个导出格式，但读记忆的地方不一样：330 读
+      // chats[].longTermMemory[]，兔k机读 history 里 type:"summary" 的消息
+      //（拼提示词时 history.filter(m => m.type === "summary")）。
+      // 所以往这个目标写的时候两边各留一份，一个文件同时喂饱两家。
+      //
+      // summary 消息带 isHidden：330 渲染和拼上下文都会跳过它
+      //（history.filter(m => !m.isHidden)），不会多出重复气泡；
+      // 兔k机取 summary 只按 type 过滤，照样读得到。
+      // 已经存在的 summary 消息按正文去重，重复转换不会越滚越多。
+      function ensureEphoneSummaryMessages(chats) {
+        return asArray(chats).map((chat) => {
+          const entries = asArray(chat.longTermMemory);
+          if (!entries.length) return chat;
+          const history = asArray(chat.history);
+          const existing = new Set(history
+            .filter((message) => message && message.type === "summary")
+            .map((message) => String(message.content || "")));
+          const added = [];
+          entries.forEach((entry, index) => {
+            const content = typeof entry === "string" ? entry : String(entry?.content || entry?.text || "");
+            if (!content || existing.has(content)) return;
+            existing.add(content);
+            const timestamp = asTimestamp(typeof entry === "object" ? entry?.timestamp : Date.now());
+            added.push({
+              id: `imported_summary_${timestamp}_${index}`,
+              role: "system",
+              type: "summary",
+              content,
+              timestamp,
+              isHidden: true,
+            });
+          });
+          return added.length ? { ...chat, history: [...history, ...added] } : chat;
+        });
+      }
+
+      // ───────────────────────── 表情包单独转换 ─────────────────────────
+      // 各家表情库都是扁平的「名字 + 图片地址」，字段名不同：
+      //   330/兔k机 userStickers {id,url,name,categoryId} · csy/手抓 savedEmojis {name,url,categoryId}
+      //   章鱼机/1900uwu myStickers · 弯弯 stickers {id,categoryId,name,image} · Float 图集嵌套
+      // 注意：聊天记录里的表情是「按名字」引用的（330 用 findBestStickerMatch 模糊匹配、
+      // 弯弯回退到 stickerMap[name]、Float 写 [表情包:名字]），所以名字必须原样保留，
+      // 否则单独导入表情包后历史消息会匹配不上、显示成占位符。
+
+      function normalizeStickerList(list) {
+        const output = [];
+        asArray(list).forEach((sticker) => {
+          if (!sticker || typeof sticker !== "object") return;
+          const url = valueOr(sticker, ["url", "image", "data", "src"], "");
+          const name = valueOr(sticker, ["name", "meaning", "title"], "");
+          if (!url) return; // 没有图片地址的条目导过去只会是坏图
+          output.push({
+            id: sticker.id ? String(sticker.id) : `sticker_${output.length + 1}`,
+            name: String(name || `表情 ${output.length + 1}`),
+            url: String(url),
+          });
+        });
+        return output;
+      }
+
+      // Float 的表情存成图集：KV 里是 {id,name,stickers:[{id,name,assetId,externalUrl}]}，
+      // 图片本体在主题素材库（ai_phone_theme_db_v1 的 assets 仓）里，靠 assetId 关联。
+      // 装配 Float 备份时素材已经还原成 data URL，这里按 assetId 查回来。
+      function floatStickersToNormalized(rawData) {
+        const assetsById = new Map();
+        asArray(rawData.idb?.ai_phone_theme_db_v1?.assets).forEach((asset) => {
+          if (!asset || typeof asset !== "object") return;
+          const id = String(asset.id || asset.__key || "");
+          if (id && asset.dataUrl) assetsById.set(id, String(asset.dataUrl));
+        });
+        const output = [];
+        asArray(rawData.kv?.ai_phone_sticker_packs_v1).forEach((pack) => {
+          if (!pack || typeof pack !== "object") return;
+          asArray(pack.stickers).forEach((sticker) => {
+            if (!sticker || typeof sticker !== "object") return;
+            // externalUrl 优先：用了外链的条目 assetId 是空的
+            const url = sticker.externalUrl || assetsById.get(String(sticker.assetId)) || "";
+            if (!url) return;
+            output.push({
+              id: String(sticker.id || `sticker_${output.length + 1}`),
+              name: String(sticker.name || `表情 ${output.length + 1}`),
+              url: String(url),
+            });
+          });
+        });
+        return output;
+      }
+
+      // 糯叽机把表情拆在 stickers / stickerStore 两处，颜文字（kaomojis）没有图片，
+      // 转过去只会是空图，跳过。
+      function nuojijiStickersToNormalized(rawData) {
+        const structured = nuojijiStructured(rawData);
+        return normalizeStickerList([
+          ...asArray(structured.stickers),
+          ...asArray(structured.stickerStore),
+        ]);
+      }
+
+      function extractStickers(sourceFormat, rawData) {
+        if (sourceFormat === "float") return floatStickersToNormalized(rawData);
+        if (sourceFormat === "nuojiji") return nuojijiStickersToNormalized(rawData);
+        if (sourceFormat === "sully-hand" || sourceFormat === "sully-csy") {
+          return normalizeStickerList(rawData.savedEmojis);
+        }
+        if (sourceFormat === "wanwan") return normalizeStickerList(rawData.stickers);
+        if (sourceFormat === "octopus" || sourceFormat === "1900uwu") {
+          return normalizeStickerList(rawData.myStickers);
+        }
+        // EPhone 家族与 zz 都用 userStickers
+        const data = sourceData(rawData);
+        return normalizeStickerList(data.userStickers || rawData.userStickers);
+      }
+
+      // 表情包单独导出：生成的文件仍是目标小手机的原生备份格式，
+      // 只填表情相关字段。Float/csy/手抓的导入器是「字段存在才处理」的合并式，
+      // 这类文件只会更新表情库；330/兔k机是清空式导入，需要在界面上警告。
+      function buildStickerOnlyBackup(target, stickers) {
+        const date = Date.now();
+        if (target === "sully-hand" || target === "sully-csy") {
+          return {
+            version: target === "sully-hand" ? 3 : 2,
+            timestamp: date,
+            savedEmojis: stickers.map((sticker) => ({
+              name: sticker.name, url: sticker.url, categoryId: "imported",
+            })),
+            emojiCategories: [{ id: "imported", name: "导入表情" }],
+          };
+        }
+        if (target === "wanwan") {
+          return {
+            version: 1,
+            exportedAt: date,
+            appName: "弯弯",
+            stickers: stickers.map((sticker, index) => ({
+              id: index + 1, categoryId: 1, name: sticker.name, image: sticker.url,
+            })),
+            stickerCategories: [{ id: 1, name: "导入表情" }],
+          };
+        }
+        if (target === "octopus" || target === "1900uwu") {
+          return { myStickers: stickers.map((s) => ({ id: s.id, name: s.name, url: s.url })) };
+        }
+        // EPhone 家族（330 / 兔k机 / yuan改 / miya）
+        return {
+          version: 3,
+          timestamp: date,
+          data: {
+            userStickers: stickers.map((s) => ({
+              id: s.id, name: s.name, url: s.url, categoryId: "imported",
+            })),
+            userStickerCategories: [{ id: "imported", name: "导入表情" }],
           },
         };
       }
@@ -1900,7 +2666,7 @@
         return "text";
       }
 
-      function toSullyBackup(target, sourceFormat, rawData) {
+      function toSullyBackup(target, sourceFormat, rawData, options = {}) {
         let output;
         if (sourceFormat === "sully-hand" || sourceFormat === "sully-csy") {
           output = { ...rawData };
@@ -2012,8 +2778,20 @@
         }
 
         output.timestamp = Date.now();
+
+        // 记忆迁移：源与目标是同一种格式时，记忆字段已经跟着 rawData 原样带过来了，
+        // 不需要重建。csy ↔ 手抓 虽然同属 SullyOS，但记忆结构完全不同
+        // （vectorMemories vs memoryNodes+memoryVectors），仍要走中间格式转换。
+        const migrateMemory = options.memory && sourceFormat !== target;
+        const memories = migrateMemory ? extractMemories(sourceFormat, rawData) : [];
+
         if (target === "sully-hand") {
           output.version = 3;
+          if (memories.length) {
+            const { nodes, vectors } = memoriesToHand(memories, options);
+            output.memoryNodes = [...asArray(output.memoryNodes), ...nodes];
+            if (vectors.length) output.memoryVectors = [...asArray(output.memoryVectors), ...vectors];
+          }
           // 手抓版会在任何数据库写入前明确拒绝这两个 csy 专属顶层字段。
           delete output.vectorMemories;
           delete output.extraLocalStorageConfig;
@@ -2021,6 +2799,9 @@
         }
 
         output.version = 2;
+        if (memories.length) {
+          output.vectorMemories = [...asArray(output.vectorMemories), ...memoriesToCsy(memories, options)];
+        }
         if (Array.isArray(output.messages)) {
           output.messages = output.messages.map((message) => ({
             ...message,
@@ -2047,11 +2828,11 @@
         return Object.fromEntries(Object.entries(output).filter(([key]) => CSY_BACKUP_FIELDS.has(key)));
       }
 
-      function toOctopusBackup(sourceFormat, rawData) {
+      function toOctopusBackup(sourceFormat, rawData, options = {}) {
         if (sourceFormat === "octopus") {
           return { ...rawData, _exportVersion: "2.0", _exportTimestamp: Date.now(), _optimizedStorage: true };
         }
-        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const data = toEphoneCompatible(sourceFormat, rawData, options).data;
         const chats = asArray(data.chats);
         const apiConfig = firstRecord(data.apiConfig);
         const globalSettings = firstRecord(data.globalSettings);
@@ -2083,11 +2864,11 @@
         "inventory", "emails", "watchTogetherPlaylist",
       ];
 
-      function toYuanUwuBackup(sourceFormat, rawData) {
+      function toYuanUwuBackup(sourceFormat, rawData, options = {}) {
         if (sourceFormat === "yuanuwu") {
           return { ...rawData, timestamp: Date.now() };
         }
-        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const data = toEphoneCompatible(sourceFormat, rawData, options).data;
         const apiConfig = firstRecord(data.apiConfig);
         const globalSettings = firstRecord(data.globalSettings);
 
@@ -2111,11 +2892,11 @@
 
       // 1900版uwu 直接把整个 db 对象 gzip 成 .ee，字段和章鱼机基本一致，
       // 只有 _exportVersion 是 "3.0"，识别用的就是这个值。
-      function to1900UwuBackup(sourceFormat, rawData) {
+      function to1900UwuBackup(sourceFormat, rawData, options = {}) {
         if (sourceFormat === "1900uwu") {
           return { ...rawData, _exportVersion: "3.0", _exportTimestamp: Date.now() };
         }
-        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const data = toEphoneCompatible(sourceFormat, rawData, options).data;
         const chats = asArray(data.chats);
         const apiConfig = firstRecord(data.apiConfig);
         const globalSettings = firstRecord(data.globalSettings);
@@ -2148,13 +2929,13 @@
 
       // miya 的备份是 ZIP：manifest.json + localStorage.json（值是 JSON 字符串）
       // + indexedDB_kv.json。导入时缺失的 idb 分片会被跳过，所以这三个文件就够了。
-      function toMiyaBackup(sourceFormat, rawData) {
+      function toMiyaBackup(sourceFormat, rawData, options = {}) {
         if (sourceFormat === "miya") {
           const ls = rawData.localStorage || {};
           const kv = rawData.indexedDB_kv || {};
           return miyaZipFromStores(ls, kv);
         }
-        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const data = toEphoneCompatible(sourceFormat, rawData, options).data;
         const chats = asArray(data.chats);
         const globalSettings = firstRecord(data.globalSettings);
         const now = Date.now();
@@ -2380,9 +3161,9 @@
         return entries;
       }
 
-      function toZzBackup(sourceFormat, rawData) {
+      function toZzBackup(sourceFormat, rawData, options = {}) {
         if (sourceFormat === "zz") return { ...rawData };
-        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const data = toEphoneCompatible(sourceFormat, rawData, options).data;
         const chats = asArray(data.chats);
         const contacts = chats.map((chat) => {
           const settings = chat.settings || {};
@@ -2447,9 +3228,9 @@
         }).filter((book) => book.entries.length);
       }
 
-      function toWanwanBackup(sourceFormat, rawData) {
+      function toWanwanBackup(sourceFormat, rawData, options = {}) {
         if (sourceFormat === "wanwan") return { ...rawData, exportedAt: Date.now() };
-        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const data = toEphoneCompatible(sourceFormat, rawData, options).data;
         const chats = asArray(data.chats);
         const globalSettings = asArray(data.globalSettings)[0] || {};
 
@@ -2744,7 +3525,7 @@
         }).filter((book) => book.entries.length);
       }
 
-      function toFloatBackup(sourceFormat, rawData) {
+      function toFloatBackup(sourceFormat, rawData, options = {}) {
         const data = toEphoneCompatible(sourceFormat, rawData).data;
         const chats = asArray(data.chats);
         const globalSettings = asArray(data.globalSettings)[0] || {};
@@ -2893,6 +3674,29 @@
             sources: settingsSources,
           },
         ];
+
+        // 记忆要落进 Float 自己登记的 memory 模块，角色 ID 也要换成上面新生成的 char_N，
+        // 否则导入后记忆挂不到任何角色身上。
+        if (options.memory && sourceFormat !== "float") {
+          const memories = extractMemories(sourceFormat, rawData)
+            .map((memory) => ({
+              ...memory,
+              charId: characterIdBySourceId.get(String(memory.charId)) || memory.charId,
+            }));
+          if (memories.length) {
+            const floatMemories = memoriesToFloat(memories, options, now);
+            payloads.push({
+              moduleId: "memory",
+              label: "记忆",
+              records: floatMemories.length,
+              sources: [{
+                type: "indexeddb",
+                dbName: "ai_phone_memory_db_v1",
+                stores: [floatStore("memories", "id", floatMemories.map((record) => ({ value: record })))],
+              }],
+            });
+          }
+        }
 
         const encoder = new TextEncoder();
         const files = payloads.map((payload) => ({
@@ -3098,42 +3902,50 @@
           }
           const stats = detected ? detected.stats : collectStats(source.format, source.data);
           const date = new Date().toISOString().slice(0, 10);
+          // 记忆是可选项，默认不开；勾了才走中间格式重建。
+          // summaryMessages 只给「330 / 兔k机」这个目标：这两家用同一个导出格式，
+          // 但兔k机是从 history 里的 summary 消息读记忆的，得额外补一份。
+          const options = {
+            memory: memoryToggle.checked && !memoryToggle.disabled,
+            keepVectors: vectorToggle.checked && !vectorToggle.disabled,
+            summaryMessages: target === "ephone",
+          };
           if (target === "ephone") {
-            const output = toEphoneCompatible(source.format, source.data);
+            const output = toEphoneCompatible(source.format, source.data, options);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             showSuccess(source.sourceLabel, "330 / 兔k机", stats, blob, `EPhone-Compatible-Backup-v330-${date}.json`);
           } else if (target === "octopus") {
-            const output = toOctopusBackup(source.format, source.data);
+            const output = toOctopusBackup(source.format, source.data, options);
             const blob = await gzipJson(output);
             showSuccess(source.sourceLabel, "章鱼机", stats, blob, `章鱼机_转换备份_${date}.ee`);
           } else if (target === "nuojiji") {
-            const output = toNuojijiBackup(source.format, source.data);
+            const output = toNuojijiBackup(source.format, source.data, options);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             showSuccess(source.sourceLabel, "糯叽机 v5", stats, blob, `Nuojiji-v5-Converted-Backup-${date}.json`);
           } else if (target === "zz") {
-            const output = toZzBackup(source.format, source.data);
+            const output = toZzBackup(source.format, source.data, options);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             showSuccess(source.sourceLabel, "zz 小手机", stats, blob, `iphone-sim-config-converted-${date}.json`);
           } else if (target === "wanwan") {
-            const output = toWanwanBackup(source.format, source.data);
+            const output = toWanwanBackup(source.format, source.data, options);
             const blob = new Blob([JSON.stringify(output)], { type: "application/json" });
             showSuccess(source.sourceLabel, "弯弯小手机", stats, blob, `弯弯_转换备份_${date}.json`);
           } else if (target === "float") {
-            const blob = await toFloatBackup(source.format, source.data);
+            const blob = await toFloatBackup(source.format, source.data, options);
             showSuccess(source.sourceLabel, "Float 小手机", stats, blob, `float-converted-backup-${date}.zip`);
           } else if (target === "yuanuwu") {
-            const output = toYuanUwuBackup(source.format, source.data);
+            const output = toYuanUwuBackup(source.format, source.data, options);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             showSuccess(source.sourceLabel, "yuan改uwu", stats, blob, `EPhone-Full-Backup-${date}.json`);
           } else if (target === "1900uwu") {
-            const output = to1900UwuBackup(source.format, source.data);
+            const output = to1900UwuBackup(source.format, source.data, options);
             const blob = await gzipJson(output);
             showSuccess(source.sourceLabel, "1900版uwu", stats, blob, `1900uwu_转换备份_${date}.ee`);
           } else if (target === "miya") {
-            const blob = await toMiyaBackup(source.format, source.data);
+            const blob = await toMiyaBackup(source.format, source.data, options);
             showSuccess(source.sourceLabel, "miya小手机", stats, blob, `miya_转换备份_${date}.zip`);
           } else {
-            const output = toSullyBackup(target, source.format, source.data);
+            const output = toSullyBackup(target, source.format, source.data, options);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             const isHand = target === "sully-hand";
             showSuccess(
@@ -3151,6 +3963,178 @@
           setBusy(false);
         }
       });
+
+      // ───────────────────────── 表情包单独转换 ─────────────────────────
+      // 独立于上面的整包转换：只读源备份里的表情库，只写目标格式的表情字段。
+      //
+      // 能这么干是因为 Float / csy / 手抓 的导入器都是「字段存在才处理」的合并式
+      //（if (data.savedEmojis) mergeStore(...)），缺字段的文件只会更新表情库。
+      // 330 / 兔k机那边不是：importFrom330Format 会先把所有表 clear 一遍，
+      // 所以这类目标必须警告，别拿只有表情的文件去覆盖整个手机。
+      const STICKER_TARGETS = [
+        { value: "ephone", name: "330 / 兔k机", note: "v3 JSON · userStickers", destructive: true },
+        { value: "sully-hand", name: "手抓糯米机", note: "SullyOS v3 · savedEmojis" },
+        { value: "sully-csy", name: "csy 糯米机", note: "SullyOS v2 · savedEmojis" },
+        { value: "wanwan", name: "弯弯小手机", note: "弯弯 JSON · stickers" },
+        { value: "octopus", name: "章鱼机", note: ".ee Gzip · myStickers" },
+        { value: "1900uwu", name: "1900版uwu", note: ".ee Gzip · myStickers" },
+        { value: "yuanuwu", name: "yuan改uwu", note: "v3 JSON · userStickers", destructive: true },
+      ];
+
+      const stickerFileInput = document.getElementById("sticker-file");
+      const stickerDropzone = document.getElementById("sticker-dropzone");
+      const stickerDzTitle = document.getElementById("sticker-dz-title");
+      const stickerDzSub = document.getElementById("sticker-dz-sub");
+      const stickerProbe = document.getElementById("sticker-probe");
+      const stickerGrid = document.getElementById("sticker-target-grid");
+      const stickerWarning = document.getElementById("sticker-warning");
+      const stickerButton = document.getElementById("sticker-button");
+      const stickerDownload = document.getElementById("sticker-download");
+      let stickerSource = null;
+      let stickerList = [];
+      let stickerProbeToken = 0;
+      let stickerObjectUrl = null;
+
+      STICKER_TARGETS.forEach((entry, index) => {
+        const label = document.createElement("label");
+        label.className = "target-option";
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "sticker-target";
+        input.value = entry.value;
+        if (index === 0) input.checked = true;
+        const title = document.createElement("strong");
+        title.textContent = entry.name;
+        const note = document.createElement("span");
+        note.textContent = entry.note;
+        label.append(input, title, note);
+        input.addEventListener("change", refreshStickerUi);
+        stickerGrid.append(label);
+      });
+
+      function currentStickerTarget() {
+        const value = document.querySelector('input[name="sticker-target"]:checked')?.value || "ephone";
+        return STICKER_TARGETS.find((entry) => entry.value === value) || STICKER_TARGETS[0];
+      }
+
+      function refreshStickerUi() {
+        const target = currentStickerTarget();
+        stickerButton.disabled = !stickerList.length;
+        if (target.destructive) {
+          stickerWarning.style.display = "";
+          stickerWarning.textContent =
+            `${target.name} 的导入是「先清空再写入」的：拿这个只有表情的文件去导入，` +
+            "角色、聊天记录、世界书会一起被清掉。想只补表情，请在它自带的表情管理里逐个添加，" +
+            "或者改用上面的整包转换。";
+        } else {
+          stickerWarning.style.display = "none";
+          stickerWarning.textContent = "";
+        }
+      }
+
+      async function probeStickerFile(file, token) {
+        stickerProbe.className = "probe visible";
+        stickerProbe.textContent = "正在读取备份…";
+        try {
+          const source = await readBackup(file);
+          const stickers = extractStickers(source.format, source.data);
+          if (token !== stickerProbeToken) return;
+          stickerSource = source;
+          stickerList = stickers;
+          if (!stickers.length) {
+            stickerProbe.className = "probe visible bad";
+            stickerProbe.textContent = `识别为 ${source.sourceLabel}，但里面没有找到带图片的表情。`;
+          } else {
+            const label = document.createElement("b");
+            label.textContent = source.sourceLabel;
+            stickerProbe.className = "probe visible ok";
+            stickerProbe.textContent = "";
+            stickerProbe.append("识别为 ", label, ` · 表情 ${stickers.length} 个`);
+          }
+          refreshStickerUi();
+        } catch (error) {
+          if (token !== stickerProbeToken) return;
+          console.error(error);
+          stickerSource = null;
+          stickerList = [];
+          stickerProbe.className = "probe visible bad";
+          stickerProbe.textContent = error.message || "无法读取这个文件。";
+          refreshStickerUi();
+        }
+      }
+
+      function setStickerFile(file) {
+        stickerProbeToken += 1;
+        stickerSource = null;
+        stickerList = [];
+        stickerDownload.style.display = "none";
+        stickerDropzone.classList.toggle("has-file", Boolean(file));
+        refreshStickerUi();
+        if (!file) {
+          stickerDzTitle.textContent = "把任意小手机的备份拖到这里，或点击选择";
+          stickerDzSub.textContent = "只读取里面的表情库，其余数据一概不动";
+          stickerProbe.className = "probe";
+          return;
+        }
+        stickerDzTitle.textContent = file.name;
+        stickerDzSub.textContent = formatSize(file.size);
+        probeStickerFile(file, stickerProbeToken);
+      }
+
+      stickerFileInput.addEventListener("change", () => setStickerFile(stickerFileInput.files[0] || null));
+      stickerDropzone.addEventListener("dragenter", () => stickerDropzone.classList.add("is-over"));
+      stickerDropzone.addEventListener("dragover", () => stickerDropzone.classList.add("is-over"));
+      stickerDropzone.addEventListener("dragleave", (event) => {
+        if (!stickerDropzone.contains(event.relatedTarget)) stickerDropzone.classList.remove("is-over");
+      });
+      stickerDropzone.addEventListener("drop", (event) => {
+        stickerDropzone.classList.remove("is-over");
+        const file = event.dataTransfer?.files?.[0];
+        if (!file) return;
+        setStickerFile(file);
+        try {
+          const transfer = new DataTransfer();
+          transfer.items.add(file);
+          stickerFileInput.files = transfer.files;
+        } catch (error) {
+          console.warn("无法同步文件到 input，转换本身不受影响。", error);
+        }
+      });
+
+      stickerButton.addEventListener("click", async () => {
+        if (!stickerList.length) return;
+        stickerButton.disabled = true;
+        stickerButton.textContent = "正在导出…";
+        try {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 32);
+            requestAnimationFrame(() => setTimeout(resolve, 0));
+          });
+          const target = currentStickerTarget();
+          const output = buildStickerOnlyBackup(target.value, stickerList);
+          const gzip = target.value === "octopus" || target.value === "1900uwu";
+          const blob = gzip
+            ? await gzipJson(output)
+            : new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+          const date = new Date().toISOString().slice(0, 10);
+          if (stickerObjectUrl) URL.revokeObjectURL(stickerObjectUrl);
+          stickerObjectUrl = URL.createObjectURL(blob);
+          stickerDownload.href = stickerObjectUrl;
+          stickerDownload.download = `表情包_${target.name}_${date}.${gzip ? "ee" : "json"}`;
+          stickerDownload.style.display = "inline-flex";
+          stickerDownload.textContent = `下载 ${stickerList.length} 个表情（${formatSize(blob.size)}）`;
+        } catch (error) {
+          console.error(error);
+          stickerProbe.className = "probe visible bad";
+          stickerProbe.textContent = error.message || "导出表情包时发生未知错误。";
+        } finally {
+          stickerButton.disabled = !stickerList.length;
+          stickerButton.textContent = "只导出表情包";
+        }
+      });
+
+      refreshMemoryOptions();
+      refreshStickerUi();
     </script>
   </body>
 </html>
