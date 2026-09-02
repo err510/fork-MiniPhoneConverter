@@ -4133,8 +4133,16 @@
         }
       });
 
+      // #notes 指向的是一个折叠的 details，光靠锚点跳过去还是收起状态，得手动展开
+      const notesDetails = document.getElementById("notes");
+      document.querySelectorAll(".notes-jump").forEach((link) => {
+        link.addEventListener("click", () => {
+          notesDetails.open = true;
+        });
+      });
+
       refreshMemoryOptions();
       refreshStickerUi();
-    </script>
+</script>
   </body>
 </html>
