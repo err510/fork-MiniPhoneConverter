@@ -590,4 +590,182 @@ for (const [format, data] of [['wanwan', wanwan], ['float', floatData]]) {
   assert.ok(asEphone.data.chats.length > 0, `${format} → 330 为空`);
 }
 
+// ===== yuan改uwu / 1900版uwu / miya小手机 =====
+
+// yuan改uwu：Dexie 每张表平铺到顶层。导入端只对数组 bulkPut，
+// 单条表用 .get('main') 读，所以主键必须是 'main'，否则 API 与全局设置整段丢失。
+const toYuan = context.toYuanUwuBackup('ephone', {
+  ...ephone,
+  data: {
+    ...ephone.data,
+    apiConfig: [{ mainApiKey: 'sk-yuan', mainApiUrl: 'https://y.example' }],
+    globalSettings: [{ name: '我', avatar: 'me.png' }],
+    userStickers: [{ id: 's1', url: 'sticker.png' }],
+  },
+});
+assert.equal(toYuan.version, 1);
+assert.equal(typeof toYuan.timestamp, 'number');
+assert.equal(toYuan.chats.length, 2);
+assert.equal(toYuan.chats[0].history.length, 2);
+assert.equal(toYuan.chats[1].isGroup, true);
+assert.equal(toYuan.apiConfig.id, 'main', '单条表主键必须是 main');
+assert.equal(toYuan.apiConfig.mainApiKey, 'sk-yuan');
+assert.equal(toYuan.globalSettings.id, 'main');
+assert.equal(toYuan.userStickers.length, 1);
+assert.equal(toYuan.worldBooks[0].content[0].content, '天空城');
+// localStorage 恢复走的是逐键 setItem，空对象即可；对象来自 vm realm，只比内容
+assert.equal(Object.keys(toYuan.localStorage).length, 0);
+// 其余表必须是数组：导入端 Array.isArray 不成立就整张表跳过
+for (const table of ['personaPresets', 'memories', 'qzonePosts', 'emails', 'funds']) {
+  assert.ok(Array.isArray(toYuan[table]), `${table} 必须是数组`);
+}
+assert.equal(context.isYuanUwuBackup(toYuan), true, '生成的备份要能被自己识别回来');
+
+// yuan改uwu → ephone → yuan改uwu，聊天与世界书不应丢
+const yuanEphone = context.toEphoneCompatible('yuanuwu', toYuan).data;
+assert.equal(yuanEphone.chats.length, 2);
+assert.equal(yuanEphone.chats[0].history.length, 2);
+assert.equal(yuanEphone.apiConfig[0].mainApiKey, 'sk-yuan');
+const yuanRoundTrip = context.toYuanUwuBackup('yuanuwu', toYuan);
+assert.equal(yuanRoundTrip.chats.length, 2);
+assert.equal(yuanRoundTrip.apiConfig.id, 'main');
+
+// 1900版uwu：整个 db 对象 gzip 成 .ee，识别靠 _exportVersion === '3.0'
+const to1900 = context.to1900UwuBackup('ephone', ephone);
+assert.equal(to1900._exportVersion, '3.0');
+assert.equal(typeof to1900._exportTimestamp, 'number');
+assert.equal(to1900.characters.length, 1);
+assert.equal(to1900.groups.length, 1);
+assert.equal(to1900.characters[0].history.length, 2);
+assert.equal(to1900.groups[0].history.length, 1);
+assert.equal(to1900.worldBooks[0].content, '[备注: 从章鱼机导入]\n[关键词: 城]\n天空城');
+assert.equal(context.is1900UwuBackup(to1900), true, '生成的备份要能被自己识别回来');
+assert.equal(context.isYuanUwuBackup(to1900), false, '不能和 yuan改uwu 撞识别');
+
+const uwu1900Ephone = context.toEphoneCompatible('1900uwu', to1900).data;
+assert.equal(uwu1900Ephone.chats.length, 2);
+assert.equal(uwu1900Ephone.chats.filter((chat) => chat.isGroup).length, 1);
+
+// miya：ZIP = manifest.json + localStorage.json + indexedDB_kv.json
+const miyaBlob = await context.toMiyaBackup('ephone', ephone);
+const miyaMap = context.zipEntryMap(await context.readZipEntries({
+  name: 'miya.zip', arrayBuffer: () => miyaBlob.arrayBuffer(),
+}));
+const miyaManifest = JSON.parse(new TextDecoder().decode(miyaMap.get('manifest.json')));
+assert.equal(context.isMiyaManifest(miyaManifest), true);
+assert.equal(miyaManifest.app, 'miya-mini-phone');
+assert.equal(miyaManifest.zipMethod, 'store');
+assert.ok(miyaMap.has('localStorage.json'), '缺 localStorage.json 会让 miya 报 missing_localStorage');
+assert.ok(miyaMap.has('indexedDB_kv.json'));
+
+const miyaLs = JSON.parse(new TextDecoder().decode(miyaMap.get('localStorage.json')));
+const miyaKv = JSON.parse(new TextDecoder().decode(miyaMap.get('indexedDB_kv.json')));
+// localStorage 的值必须是 JSON 字符串（miya 用 setItem 原样写回），不能是对象
+for (const key of ['miya-chat-meta', 'miya-contacts-v1', 'miya-worldbook-v1']) {
+  assert.equal(typeof miyaLs[key], 'string', `${key} 必须是字符串`);
+}
+const miyaMeta = miyaKv['miya-chat-meta'];
+assert.equal(miyaMeta.version, 2);
+assert.equal(miyaMeta.contacts.length, 1);
+assert.equal(miyaMeta.chats.length, 2);
+assert.equal(miyaMeta.chats.filter((chat) => chat.type === 'group').length, 1);
+assert.equal(miyaMeta.contactGroups[0].id, 'ct-default', '会话侧默认分组是短横线');
+const miyaPrivate = miyaMeta.chats.find((chat) => chat.type === 'private');
+assert.equal(miyaMeta.messagesByChat[miyaPrivate.id].length, 2);
+assert.equal(miyaMeta.messagesByChat[miyaPrivate.id][0].role, 'user');
+assert.equal(typeof miyaMeta.messagesByChat[miyaPrivate.id][0].createdAt, 'number');
+const miyaGroup = miyaMeta.chats.find((chat) => chat.type === 'group');
+assert.equal(miyaGroup.memberIds.length, 1);
+assert.ok(miyaMeta.contacts.some((contact) => contact.id === miyaGroup.memberIds[0]),
+  '群成员必须在 contacts 里，否则 miya 的 getGroupMembers 全滤空');
+assert.equal(miyaKv['miya-contacts-v1'].groups[0].id, 'ct_default', '角色侧默认分组是下划线');
+assert.equal(miyaKv['miya-worldbook-v1'].entries[0].content, '天空城');
+assert.deepEqual([...miyaKv['miya-worldbook-v1'].entries[0].keywords], ['城']);
+assert.equal(miyaKv['miya-worldbook-v1'].groups[0].id, 'grp_default');
+
+// miya → ephone：把刚生成的 ZIP 内容当成源数据读回来
+const miyaSource = { manifest: miyaManifest, localStorage: miyaLs, indexedDB_kv: miyaKv };
+const miyaEphone = context.toEphoneCompatible('miya', miyaSource).data;
+assert.equal(miyaEphone.chats.length, 2);
+assert.equal(miyaEphone.chats.filter((chat) => chat.isGroup).length, 1);
+assert.equal(miyaEphone.chats.find((chat) => !chat.isGroup).history.length, 2);
+assert.equal(miyaEphone.worldBooks[0].content[0].content, '天空城');
+const miyaStats = context.collectStats('miya', miyaSource);
+assert.equal(miyaStats.characters, 1);
+assert.equal(miyaStats.groups, 1);
+assert.equal(miyaStats.messages, 3);
+assert.equal(miyaStats.worldBooks, 1);
+
+// 超过 48KB 的键 miya 只在 localStorage 留占位符，真数据在 indexedDB_kv：
+// 读取端必须优先看 kv，否则真实备份会整段读空。
+const spilled = {
+  localStorage: {
+    'miya-chat-meta': '{"__storedInIdb":true}',
+    'miya-contacts-v1': '{"__storedInIdb":true}',
+    'miya-worldbook-v1': '{"__storedInIdb":true}',
+  },
+  indexedDB_kv: miyaKv,
+};
+const spilledStats = context.collectStats('miya', spilled);
+assert.equal(spilledStats.messages, 3, '占位符不能让消息读成 0');
+assert.equal(spilledStats.characters, 1);
+assert.equal(context.toEphoneCompatible('miya', spilled).data.chats.length, 2);
+
+// 三个新目标都走 ephone 中间格式，糯叽机应当放行
+for (const target of ['yuanuwu', '1900uwu', 'miya']) {
+  assert.equal(context.targetSupportsNuojiji(target), true, `${target} 应支持糯叽机来源`);
+}
+
+// 每种源格式都能转到三个新目标
+for (const [format, data] of Object.entries(sources)) {
+  const asYuan = context.toYuanUwuBackup(format, data);
+  assert.equal(asYuan.version, 1, `${format} → yuan改uwu 版本号不对`);
+  assert.ok(asYuan.chats.length > 0, `${format} → yuan改uwu 一个会话都没有`);
+  assert.equal(asYuan.apiConfig.id, 'main', `${format} → yuan改uwu 主键丢了`);
+
+  const as1900 = context.to1900UwuBackup(format, data);
+  assert.equal(as1900._exportVersion, '3.0', `${format} → 1900版uwu 版本号不对`);
+  assert.ok(as1900.characters.length + as1900.groups.length > 0, `${format} → 1900版uwu 为空`);
+
+  const blob = await context.toMiyaBackup(format, data);
+  const map = context.zipEntryMap(await context.readZipEntries({
+    name: `${format}-miya.zip`, arrayBuffer: () => blob.arrayBuffer(),
+  }));
+  const mf = JSON.parse(new TextDecoder().decode(map.get('manifest.json')));
+  assert.ok(context.isMiyaManifest(mf), `${format} → miya 清单不合法`);
+  const kv = JSON.parse(new TextDecoder().decode(map.get('indexedDB_kv.json')));
+  assert.ok(kv['miya-chat-meta'].chats.length > 0, `${format} → miya 一个会话都没有`);
+}
+
+// 三个新格式作为来源，也要能转回其余目标
+const newSources = {
+  yuanuwu: toYuan,
+  '1900uwu': to1900,
+  miya: miyaSource,
+};
+for (const [format, data] of Object.entries(newSources)) {
+  const asEphone = context.toEphoneCompatible(format, data);
+  assert.equal(asEphone.version, 3, `${format} → 330 版本号不对`);
+  assert.ok(asEphone.data.chats.length > 0, `${format} → 330 为空`);
+
+  const asOctopus = context.toOctopusBackup(format, data);
+  assert.ok(asOctopus.characters.length + asOctopus.groups.length > 0, `${format} → 章鱼机 为空`);
+
+  const asWanwan = context.toWanwanBackup(format, data);
+  assert.equal(asWanwan.appName, '弯弯', `${format} → 弯弯 输出不合法`);
+
+  const asZz = context.toZzBackup(format, data);
+  assert.ok(asZz.contacts.length > 0, `${format} → zz 为空`);
+
+  const asNuojiji = context.toNuojijiBackup(format, data);
+  assert.ok(asNuojiji.data.structuredDB.characters.length > 0, `${format} → 糯叽机 一个角色都没有`);
+
+  for (const flavor of ['sully-hand', 'sully-csy']) {
+    const asSully = context.toSullyBackup(flavor, format, data);
+    assert.ok(asSully.characters.length + asSully.groups.length > 0, `${format} → ${flavor} 为空`);
+  }
+
+  assert.ok((await context.toFloatBackup(format, data)).size > 0, `${format} → Float 为空`);
+}
+
 console.log('converter tests passed');

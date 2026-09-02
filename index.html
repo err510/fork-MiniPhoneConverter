@@ -228,6 +228,18 @@
                 <input type="radio" name="target" value="float" />
                 <strong>Float 小手机</strong><span>Float 原生 ZIP 备份</span>
               </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="yuanuwu" />
+                <strong>yuan改uwu</strong><span>EPhone 变体 JSON 备份</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="1900uwu" />
+                <strong>1900版uwu</strong><span>章鱼喷墨 .ee Gzip 备份</span>
+              </label>
+              <label class="target-option">
+                <input type="radio" name="target" value="miya" />
+                <strong>miya小手机</strong><span>Miya ZIP 备份</span>
+              </label>
             </div>
           </div>
         </section>
@@ -401,6 +413,25 @@
         return Boolean(manifest && typeof manifest === "object" &&
           manifest.format === "ai-phone-backup" && typeof manifest.version === "number" &&
           Array.isArray(manifest.modules));
+      }
+
+      function isMiyaManifest(manifest) {
+        return Boolean(manifest && typeof manifest === "object" &&
+          manifest.app === "miya-mini-phone" && manifest.format === "zip" &&
+          Array.isArray(manifest.files));
+      }
+
+      function isYuanUwuBackup(data) {
+        return Boolean(data && typeof data === "object" &&
+          typeof data.version === "number" && typeof data.timestamp === "number" &&
+          Array.isArray(data.chats) && Array.isArray(data.worldBooks) &&
+          data.localStorage && typeof data.localStorage === "object");
+      }
+
+      function is1900UwuBackup(data) {
+        return Boolean(data && typeof data === "object" &&
+          data._exportVersion === "3.0" && typeof data._exportTimestamp === "number" &&
+          (Array.isArray(data.characters) || Array.isArray(data.groups)));
       }
 
       function nuojijiSource(data) {
@@ -714,6 +745,12 @@
         if (entryMap.has("manifest.json")) {
           const manifest = parseZipJson(entryMap, "manifest.json");
 
+          if (isMiyaManifest(manifest)) {
+            const ls = parseZipJson(entryMap, "localStorage.json", "Miya localStorage 缺失或损坏");
+            const kv = parseZipJson(entryMap, "indexedDB_kv.json", "Miya indexedDB_kv 缺失或损坏");
+            return { format: "miya", sourceLabel: "miya小手机", data: { manifest, localStorage: ls, indexedDB_kv: kv, zipEntries: entryMap } };
+          }
+
           if (isFloatManifest(manifest)) {
             const data = assembleFloatBackup(entryMap, manifest);
             return { format: "float", sourceLabel: "Float 小手机", data };
@@ -773,7 +810,7 @@
             const stream = file.stream().pipeThrough(new DecompressionStream("gzip"));
             text = await new Response(stream).text();
           } catch (error) {
-            throw new Error("无法解压 .ee 文件。请确认它是章鱼机导出的完整备份。" );
+            throw new Error("无法解压 .ee 文件。请确认它是章鱼机或 1900版uwu 导出的完整备份。" );
           }
         } else {
           text = await file.text();
@@ -781,16 +818,18 @@
 
         try {
           const data = JSON.parse(text);
+          if (is1900UwuBackup(data)) return { format: "1900uwu", sourceLabel: "1900版uwu (章鱼喷墨)", data };
           if (isOctopusBackup(data)) return { format: "octopus", sourceLabel: "章鱼机", data };
           if (isNuojijiBackup(data)) return { ...nuojijiSource(data), data };
           if (isZzBackup(data)) return { format: "zz", sourceLabel: "zz 小手机", data };
           if (isWanwanBackup(data)) return { format: "wanwan", sourceLabel: "弯弯小手机", data };
+          if (isYuanUwuBackup(data)) return { format: "yuanuwu", sourceLabel: "yuan改uwu (EPhone)", data };
           if (isEphoneBackup(data)) return { format: "ephone", sourceLabel: "330 / 兔k机", data };
           if (isSullyBackup(data)) return { ...sullySource(data), data };
         } catch (error) {
           throw new Error("文件不是有效的 JSON 备份，或文件内容已损坏。");
         }
-        throw new Error("未识别此备份格式。请选择糯叽机、章鱼机、330/兔k机、zz、弯弯、Float 或糯米机的原生备份文件。");
+        throw new Error("未识别此备份格式。请选择糯叽机、章鱼机、330/兔k机、zz、弯弯、Float、糯米机、yuan改uwu、1900版uwu 或 miya小手机的原生备份文件。");
       }
 
       function sourceData(data) {
@@ -1401,6 +1440,229 @@
         };
       }
 
+      function miyaParseJson(value, fallback) {
+        if (value === undefined || value === null || value === "") return fallback;
+        if (typeof value === "object") return value;
+        try {
+          const parsed = JSON.parse(value);
+          return parsed === null || parsed === undefined ? fallback : parsed;
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      // 超过 48KB 的键 miya 会存进 IndexedDB，localStorage 里只剩 {"__storedInIdb":true} 占位符。
+      // 真实备份里 miya-chat-meta 基本都超标，所以必须优先读 ZIP 里的 indexedDB_kv.json。
+      function miyaIsIdbPlaceholder(raw) {
+        if (typeof raw !== "string") return false;
+        const text = raw.trim();
+        if (!text || text.length > 120 || text[0] !== "{") return false;
+        return /"__storedInIdb"\s*:\s*true/.test(text);
+      }
+
+      function miyaReadKey(rawData, key, fallback) {
+        const kv = rawData.indexedDB_kv && typeof rawData.indexedDB_kv === "object" ? rawData.indexedDB_kv : {};
+        if (kv[key] !== undefined && kv[key] !== null) return miyaParseJson(kv[key], fallback);
+        const raw = (rawData.localStorage || {})[key];
+        if (miyaIsIdbPlaceholder(raw)) return fallback;
+        return miyaParseJson(raw, fallback);
+      }
+
+      function miyaReadStores(rawData) {
+        const ls = rawData.localStorage || {};
+        const chatMeta = miyaReadKey(rawData, "miya-chat-meta", {});
+        const contactsState = miyaReadKey(rawData, "miya-contacts-v1", {});
+        const worldbookState = miyaReadKey(rawData, "miya-worldbook-v1", {});
+        return {
+          ls,
+          chatMeta: chatMeta && typeof chatMeta === "object" ? chatMeta : {},
+          // miya-contacts-v1 / miya-worldbook-v1 序列化的是带 version 的状态对象，不是裸数组
+          characters: asArray(contactsState.characters),
+          contactGroups: asArray(contactsState.groups),
+          worldbookEntries: asArray(worldbookState.entries),
+          worldbookGroups: asArray(worldbookState.groups),
+        };
+      }
+
+      function miyaChatRows(stores) {
+        const chatMeta = stores.chatMeta;
+        const metaContacts = asArray(chatMeta.contacts);
+        const contactById = new Map();
+        metaContacts.forEach((contact) => {
+          if (contact && contact.id !== undefined) contactById.set(String(contact.id), contact);
+        });
+        const characterById = new Map();
+        stores.characters.forEach((character) => {
+          if (!character) return;
+          if (character.id !== undefined) characterById.set(String(character.id), character);
+          if (character.characterId !== undefined) characterById.set(String(character.characterId), character);
+        });
+
+        const messagesByChat = chatMeta.messagesByChat && typeof chatMeta.messagesByChat === "object"
+          ? chatMeta.messagesByChat
+          : {};
+        const rows = asArray(chatMeta.chats).map((chat) => {
+          const chatId = String(chat && chat.id !== undefined ? chat.id : "");
+          const contact = contactById.get(String(chat && chat.contactId)) || {};
+          const character = characterById.get(String(contact.characterId || chat.contactId)) || {};
+          return {
+            chat: chat || {},
+            chatId,
+            contact,
+            character,
+            messages: asArray(messagesByChat[chatId]),
+          };
+        });
+
+        // 没有会话记录的联系人也保留成空聊天，避免角色丢失
+        const seenContactIds = new Set(rows.map((row) => String(row.chat.contactId)));
+        metaContacts.forEach((contact) => {
+          if (!contact || contact.id === undefined) return;
+          if (seenContactIds.has(String(contact.id))) return;
+          const character = characterById.get(String(contact.characterId || contact.id)) || {};
+          rows.push({
+            chat: { id: String(contact.id), contactId: contact.id, type: "private", title: contact.name },
+            chatId: String(contact.id),
+            contact,
+            character,
+            messages: asArray(messagesByChat[String(contact.id)]),
+          });
+        });
+
+        return rows;
+      }
+
+      function miyaToEphone(rawData) {
+        const stores = miyaReadStores(rawData);
+        const rows = miyaChatRows(stores);
+        const profile = firstRecord(asArray(stores.chatMeta.profiles));
+
+        const chats = rows.map((row) => {
+          const { chat, contact, character } = row;
+          const isGroup = chat.type === "group";
+          const history = row.messages
+            .filter((message) => message && !message.deleted)
+            .map((message, index) => ({
+              role: message.role === "user" ? "user" : message.role === "system" ? "system" : "assistant",
+              content: valueOr(message, ["content", "text"], ""),
+              timestamp: asTimestamp(message.createdAt || message.timestamp || Date.now() + index),
+            }));
+
+          const name = valueOr(chat, ["title"], "")
+            || valueOr(contact, ["remarkName", "name"], "")
+            || valueOr(character, ["name"], "")
+            || (isGroup ? "未命名群聊" : "未命名角色");
+          const avatar = valueOr(contact, ["avatar"], "")
+            || valueOr(contact.displayAvatar || {}, ["url"], "")
+            || valueOr(character, ["avatar"], "");
+
+          const base = {
+            id: row.chatId || String(contact.id || ""),
+            name,
+            avatar,
+            systemPrompt: valueOr(character, ["persona"], "") || valueOr(contact, ["persona"], ""),
+            history,
+            isGroup,
+          };
+
+          if (!isGroup) return base;
+
+          const memberIds = asArray(chat.memberIds);
+          base.members = memberIds.map((memberId, index) => {
+            const member = stores.characters.find((candidate) => candidate
+              && (String(candidate.id) === String(memberId) || String(candidate.characterId) === String(memberId)))
+              || {};
+            return {
+              id: String(memberId),
+              name: valueOr(member, ["name"], `成员 ${index + 1}`),
+              avatar: valueOr(member, ["avatar"], ""),
+              persona: valueOr(member, ["persona"], ""),
+            };
+          });
+          return base;
+        });
+
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats,
+            worldBooks: stores.worldbookEntries.map((entry) => ({
+              id: String(entry.id || Math.random()),
+              name: entry.name || "未命名片段",
+              content: [{
+                keys: asArray(entry.keywords),
+                comment: entry.name || "",
+                content: entry.content || "",
+                enabled: entry.enabled !== false,
+              }],
+            })),
+            userStickers: [],
+            apiConfig: [],
+            globalSettings: profile.name || profile.persona ? [{
+              name: profile.name || "我",
+              avatar: valueOr(profile.displayAvatar || {}, ["url"], ""),
+              bio: profile.persona || "",
+            }] : [],
+          },
+        };
+      }
+
+      function yuanUwuToEphone(rawData) {
+        const chats = asArray(rawData.chats).map((chat) => ({
+          ...chat,
+          history: normalizeMessages(chat.history),
+        }));
+
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats,
+            worldBooks: worldBooksForEphone(rawData.worldBooks),
+            userStickers: asArray(rawData.userStickers),
+            apiConfig: rawData.apiConfig ? [rawData.apiConfig] : [],
+            globalSettings: rawData.globalSettings ? [rawData.globalSettings] : [],
+          },
+        };
+      }
+
+      function uwu1900ToEphone(rawData) {
+        const characters = asArray(rawData.characters).map((char) => ({
+          id: String(char.id || char.characterId),
+          name: char.name || char.nickname || '未命名角色',
+          avatar: char.avatar || char.image || '',
+          systemPrompt: char.persona || char.description || '',
+          history: normalizeMessages(char.history || []),
+          isGroup: false,
+        }));
+
+        const groups = asArray(rawData.groups).map((group) => ({
+          id: String(group.id || group.groupId),
+          name: group.name || group.groupName || '未命名群聊',
+          avatar: group.avatar || '',
+          history: normalizeMessages(group.history || []),
+          members: asArray(group.members).map((member) => ({
+            id: String(member.id || member.characterId),
+            name: member.name || member.nickname || '成员',
+            avatar: member.avatar || '',
+          })),
+          isGroup: true,
+        }));
+
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats: [...characters, ...groups],
+            worldBooks: worldBooksForEphone(rawData.worldBooks),
+            userStickers: asArray(rawData.myStickers),
+            apiConfig: rawData.apiSettings ? [rawData.apiSettings] : [],
+            globalSettings: rawData.globalSettings ? [rawData.globalSettings] : [],
+          },
+        };
+      }
+
       function floatToEphone(rawData) {
         const characters = asArray(rawData.characters);
         const contacts = asArray(rawData.contacts);
@@ -1558,6 +1820,9 @@
         if (sourceFormat === "nuojiji") return nuojijiToEphone(rawData);
         if (sourceFormat === "wanwan") return wanwanToEphone(rawData);
         if (sourceFormat === "float") return floatToEphone(rawData);
+        if (sourceFormat === "miya") return miyaToEphone(rawData);
+        if (sourceFormat === "yuanuwu") return yuanUwuToEphone(rawData);
+        if (sourceFormat === "1900uwu") return uwu1900ToEphone(rawData);
         if (sourceFormat === "ephone") {
           const data = sourceData(rawData);
           const chats = asArray(data.chats).map((chat) => ({ ...chat, history: normalizeMessages(chat.history) }));
@@ -1804,6 +2069,299 @@
           _exportTimestamp: Date.now(),
           _optimizedStorage: true,
         };
+      }
+
+      // yuan改uwu 的备份是把 Dexie 每张表平铺到顶层的 JSON。导入时只认数组
+      // （Array.isArray 才 bulkPut），单条表用 .get('main') 读，所以主键必须是 'main'。
+      const YUAN_UWU_ARRAY_TABLES = [
+        "personaPresets", "qzonePosts", "qzoneAlbums", "qzonePhotos", "favorites", "qzoneGroups",
+        "memories", "worldBookCategories", "apiPresets", "soundPresets", "shoppingProducts",
+        "callRecords", "renderingRules", "doubanPosts", "stickerCategories", "appearancePresets",
+        "presets", "presetCategories", "npcs", "stickerVisionCache", "shoppingCategories",
+        "customAvatarFrames", "readingLibrary", "quickReplies", "quickReplyCategories", "npcGroups",
+        "naiPresets", "grAuthors", "grStories", "userTransactions", "funds", "auctions",
+        "inventory", "emails", "watchTogetherPlaylist",
+      ];
+
+      function toYuanUwuBackup(sourceFormat, rawData) {
+        if (sourceFormat === "yuanuwu") {
+          return { ...rawData, timestamp: Date.now() };
+        }
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const apiConfig = firstRecord(data.apiConfig);
+        const globalSettings = firstRecord(data.globalSettings);
+
+        const output = {
+          version: 1,
+          timestamp: Date.now(),
+          chats: asArray(data.chats).map((chat) => ({
+            ...chat,
+            history: normalizeMessages(chat.history),
+            isGroup: Boolean(chat.isGroup),
+          })),
+          worldBooks: worldBooksForEphone(data.worldBooks),
+          userStickers: asArray(data.userStickers),
+          apiConfig: { ...apiConfig, id: "main" },
+          globalSettings: { ...globalSettings, id: "main" },
+          localStorage: {},
+        };
+        for (const table of YUAN_UWU_ARRAY_TABLES) output[table] = [];
+        return output;
+      }
+
+      // 1900版uwu 直接把整个 db 对象 gzip 成 .ee，字段和章鱼机基本一致，
+      // 只有 _exportVersion 是 "3.0"，识别用的就是这个值。
+      function to1900UwuBackup(sourceFormat, rawData) {
+        if (sourceFormat === "1900uwu") {
+          return { ...rawData, _exportVersion: "3.0", _exportTimestamp: Date.now() };
+        }
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const chats = asArray(data.chats);
+        const apiConfig = firstRecord(data.apiConfig);
+        const globalSettings = firstRecord(data.globalSettings);
+        return {
+          characters: chats.filter((chat) => !chat.isGroup).map(octopusCharacterFromChat),
+          groups: chats.filter((chat) => chat.isGroup).map(octopusGroupFromChat),
+          apiSettings: apiConfig,
+          globalSettings,
+          worldBooks: worldBooksForOctopus(data.worldBooks),
+          myStickers: asArray(data.userStickers),
+          wallpaper: data.wallpaper || globalSettings.wallpaper || "",
+          homeScreenMode: data.homeScreenMode || "night",
+          fontUrl: data.fontUrl || "",
+          customIcons: data.customIcons || {},
+          apiPresets: [],
+          bubbleCssPresets: [],
+          myPersonaPresets: [],
+          fontPresets: [],
+          forumPosts: [],
+          globalCss: "",
+          globalCssPresets: [],
+          homeSignature: data.homeSignature || "",
+          forumBindings: { worldBookIds: [], charIds: [], userPersonaIds: [] },
+          pomodoroTasks: [],
+          pomodoroSettings: {},
+          _exportVersion: "3.0",
+          _exportTimestamp: Date.now(),
+        };
+      }
+
+      // miya 的备份是 ZIP：manifest.json + localStorage.json（值是 JSON 字符串）
+      // + indexedDB_kv.json。导入时缺失的 idb 分片会被跳过，所以这三个文件就够了。
+      function toMiyaBackup(sourceFormat, rawData) {
+        if (sourceFormat === "miya") {
+          const ls = rawData.localStorage || {};
+          const kv = rawData.indexedDB_kv || {};
+          return miyaZipFromStores(ls, kv);
+        }
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const chats = asArray(data.chats);
+        const globalSettings = firstRecord(data.globalSettings);
+        const now = Date.now();
+
+        const characters = [];
+        const contacts = [];
+        const metaChats = [];
+        const messagesByChat = {};
+        const contactIdBySourceId = new Map();
+
+        const addContact = (source, fallbackKey, index) => {
+          const settings = source.settings || {};
+          const sourceKey = String(source.originalCharId || source.id || fallbackKey);
+          if (contactIdBySourceId.has(sourceKey)) return contactIdBySourceId.get(sourceKey);
+          const id = `ct_conv_${contacts.length + 1}`;
+          contactIdBySourceId.set(sourceKey, id);
+          const name = valueOr(source, ["name", "remarkName", "nickname"], `角色 ${index + 1}`);
+          const avatar = valueOr(source, ["avatar"], valueOr(settings, ["aiAvatar", "ai-avatar"], ""));
+          const persona = valueOr(source, ["persona", "systemPrompt", "description"],
+            valueOr(settings, ["aiPersona", "ai-persona"], ""));
+          characters.push({
+            id,
+            characterId: id,
+            groupId: "ct_default",
+            name,
+            avatar,
+            age: "",
+            gender: "",
+            birthday: "",
+            persona,
+            tags: [],
+            updatedAt: now,
+          });
+          contacts.push({
+            id,
+            chronicleId: "",
+            characterId: id,
+            groupId: "ct-default",
+            name,
+            remarkName: "",
+            relationship: "",
+            avatar,
+            avatarBlobId: null,
+            displayAvatar: { url: avatar, blobId: null, desc: "", sourceMsgId: "" },
+            defaultProfileId: "",
+            blocked: false,
+            pinned: false,
+            emojiGroupIds: [],
+            worldbookEntryOrder: [],
+            wallet: { balance: 0 },
+            updatedAt: now,
+          });
+          return id;
+        };
+
+        chats.forEach((chat, chatIndex) => {
+          const isGroup = Boolean(chat.isGroup);
+          const chatId = `chat_conv_${chatIndex + 1}`;
+          let memberIds = [];
+          let contactId = "";
+
+          if (isGroup) {
+            memberIds = asArray(chat.members).map((member, memberIndex) => (
+              member && typeof member === "object"
+                ? addContact(member, `${chat.id}_m${memberIndex}`, memberIndex)
+                : addContact({ id: member, name: String(member) }, String(member), memberIndex)
+            ));
+          } else {
+            contactId = addContact(chat, `chat_${chatIndex}`, chatIndex);
+          }
+
+          const history = normalizeMessages(chat.history);
+          messagesByChat[chatId] = history.map((message, messageIndex) => {
+            const content = valueOr(message, ["content", "text", "message"], "");
+            return {
+              id: `msg_conv_${chatIndex + 1}_${messageIndex + 1}`,
+              role: message.role === "user" ? "user" : message.role === "system" ? "system" : "assistant",
+              type: "text",
+              content: typeof content === "string" ? content : JSON.stringify(content),
+              createdAt: asTimestamp(message.timestamp),
+              deleted: false,
+              edited: false,
+            };
+          });
+
+          const lastMessage = messagesByChat[chatId][messagesByChat[chatId].length - 1];
+          metaChats.push({
+            id: chatId,
+            contactId,
+            profileId: "",
+            groupId: "ct-default",
+            type: isGroup ? "group" : "private",
+            memberIds,
+            title: chat.name || (isGroup ? `群聊 ${chatIndex + 1}` : ""),
+            lastPreview: lastMessage ? String(lastMessage.content).slice(0, 50) : "",
+            lastAt: lastMessage ? lastMessage.createdAt : now,
+            unread: 0,
+            createdAt: now,
+          });
+        });
+
+        const profile = {
+          id: "prof_conv_1",
+          name: globalSettings.name || globalSettings.myName || "我",
+          gender: "",
+          birthday: "",
+          persona: globalSettings.bio || globalSettings.desc || globalSettings.myPersona || "",
+          avatarId: null,
+          displayAvatar: { url: globalSettings.avatar || "", blobId: null, desc: "", sourceMsgId: "" },
+          wallet: { balance: 0 },
+          inventory: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const chatMeta = {
+          version: 2,
+          activeProfileId: profile.id,
+          profiles: [profile],
+          emojiGroups: [{ id: "default", name: "默认", sort: 0, scope: "global", contactIds: [] }],
+          emojiPacks: [],
+          savedMessages: [],
+          contactGroups: [{ id: "ct-default", name: "默认", sort: 0, createdAt: now }],
+          contacts,
+          chats: metaChats,
+          messagesByChat,
+          shopCatalog: null,
+          cstoreMystical: null,
+          chatWallpapers: [],
+        };
+
+        const contactsState = {
+          version: 1,
+          groups: [{ id: "ct_default", name: "未归档", sort: 0, fixed: true }],
+          characters,
+        };
+
+        const worldbookState = {
+          version: 2,
+          groups: [{ id: "grp_default", name: "未分组", sort: 0, fixed: true }],
+          entries: miyaWorldbookEntries(data.worldBooks, now),
+        };
+
+        const stores = {
+          "miya-chat-meta": chatMeta,
+          "miya-contacts-v1": contactsState,
+          "miya-worldbook-v1": worldbookState,
+        };
+        const localStorageJson = {};
+        const kv = {};
+        for (const [key, value] of Object.entries(stores)) {
+          // 大对象在 localStorage 里只放占位符，真数据走 indexedDB_kv，跟 miya 自己导出的一致。
+          const text = JSON.stringify(value);
+          kv[key] = value;
+          localStorageJson[key] = new TextEncoder().encode(text).length > 49152
+            ? '{"__storedInIdb":true}'
+            : text;
+        }
+        return miyaZipFromStores(localStorageJson, kv);
+      }
+
+      function miyaWorldbookEntries(worldBooks, now) {
+        const entries = [];
+        asArray(worldBooks).forEach((book, bookIndex) => {
+          const sourceEntries = Array.isArray(book.content)
+            ? book.content
+            : [{ keys: [], comment: book.name, content: book.content }];
+          asArray(sourceEntries).forEach((entry, entryIndex) => {
+            const content = typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content ?? "");
+            if (!content) return;
+            entries.push({
+              id: `wb_conv_${bookIndex + 1}_${entryIndex + 1}`,
+              name: entry.comment || entry.title || entry.name || book.name || `片段 ${entries.length + 1}`,
+              keywords: asArray(entry.keys || entry.keywords).map((keyword) => String(keyword)).filter(Boolean),
+              content,
+              scope: "global",
+              globalReach: "online_offline",
+              depth: "middle",
+              groupId: "grp_default",
+              boundRoleIds: [],
+              enabled: entry.enabled !== false,
+              createdAt: now,
+              updatedAt: now,
+            });
+          });
+        });
+        return entries;
+      }
+
+      function miyaZipFromStores(localStorageJson, kv) {
+        const encoder = new TextEncoder();
+        const manifest = {
+          v: 4,
+          app: "miya-mini-phone",
+          format: "zip",
+          mediaLayout: "bin",
+          zipMethod: "store",
+          zipBackend: "memory",
+          exportedAt: Date.now(),
+          includeHeavyMedia: false,
+          files: ["manifest.json", "localStorage.json", "indexedDB_kv.json"],
+        };
+        return buildZipBlob([
+          { name: "manifest.json", bytes: encoder.encode(JSON.stringify(manifest)) },
+          { name: "localStorage.json", bytes: encoder.encode(JSON.stringify(localStorageJson)) },
+          { name: "indexedDB_kv.json", bytes: encoder.encode(JSON.stringify(kv)) },
+        ]);
       }
 
       function ephoneWorldBooksToZz(worldBooks) {
@@ -2422,6 +2980,34 @@
             worldBooks: asArray(floatWorldBooks(data)).length,
           };
         }
+        if (format === "miya") {
+          const stores = miyaReadStores(data);
+          const rows = miyaChatRows(stores);
+          return {
+            characters: rows.filter((row) => row.chat.type !== "group").length,
+            groups: rows.filter((row) => row.chat.type === "group").length,
+            messages: rows.reduce((total, row) => total + row.messages.length, 0),
+            worldBooks: stores.worldbookEntries.length,
+          };
+        }
+        if (format === "yuanuwu") {
+          const chats = asArray(data.chats);
+          return {
+            characters: chats.filter((chat) => !chat.isGroup).length,
+            groups: chats.filter((chat) => chat.isGroup).length,
+            messages: chats.reduce((total, chat) => total + asArray(chat.history).length, 0),
+            worldBooks: asArray(data.worldBooks).length,
+          };
+        }
+        if (format === "1900uwu") {
+          return {
+            characters: asArray(data.characters).length,
+            groups: asArray(data.groups).length,
+            messages: asArray(data.characters).reduce((total, char) => total + asArray(char.history).length, 0) +
+                     asArray(data.groups).reduce((total, group) => total + asArray(group.history).length, 0),
+            worldBooks: asArray(data.worldBooks).length,
+          };
+        }
         const source = sourceData(data);
         const chats = asArray(source.chats);
         return {
@@ -2434,7 +3020,8 @@
 
       function targetSupportsNuojiji(target) {
         // 弯弯与 Float 都从 ephone 中间格式生成，糯叽机已有对应的规范化路径。
-        return ["ephone", "octopus", "nuojiji", "wanwan", "float"].includes(target);
+        // yuan改uwu / 1900版uwu / miya 同样只依赖这条路径，所以一并放行。
+        return ["ephone", "octopus", "nuojiji", "wanwan", "float", "yuanuwu", "1900uwu", "miya"].includes(target);
       }
 
       async function gzipJson(data) {
@@ -2507,7 +3094,7 @@
           const source = detected ? detected.source : await readBackup(selectedFile);
           const target = document.querySelector('input[name="target"]:checked').value;
           if (source.format === "nuojiji" && !targetSupportsNuojiji(target)) {
-            throw new Error("糯叽机 v5 目前只支持转换到 330 / 兔k机、章鱼机、弯弯或 Float。");
+            throw new Error("糯叽机 v5 目前只支持转换到 330 / 兔k机、章鱼机、弯弯、Float、yuan改uwu、1900版uwu或 miya小手机。");
           }
           const stats = detected ? detected.stats : collectStats(source.format, source.data);
           const date = new Date().toISOString().slice(0, 10);
@@ -2534,6 +3121,17 @@
           } else if (target === "float") {
             const blob = await toFloatBackup(source.format, source.data);
             showSuccess(source.sourceLabel, "Float 小手机", stats, blob, `float-converted-backup-${date}.zip`);
+          } else if (target === "yuanuwu") {
+            const output = toYuanUwuBackup(source.format, source.data);
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
+            showSuccess(source.sourceLabel, "yuan改uwu", stats, blob, `EPhone-Full-Backup-${date}.json`);
+          } else if (target === "1900uwu") {
+            const output = to1900UwuBackup(source.format, source.data);
+            const blob = await gzipJson(output);
+            showSuccess(source.sourceLabel, "1900版uwu", stats, blob, `1900uwu_转换备份_${date}.ee`);
+          } else if (target === "miya") {
+            const blob = await toMiyaBackup(source.format, source.data);
+            showSuccess(source.sourceLabel, "miya小手机", stats, blob, `miya_转换备份_${date}.zip`);
           } else {
             const output = toSullyBackup(target, source.format, source.data);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
