@@ -105,7 +105,7 @@
             <div class="step">
               <span class="step-label">01 选择备份</span>
               <h2>导入源文件</h2>
-              <p class="field-note">支持糯叽机 v5、章鱼机 `.ee`，330/兔k机、zz、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
+              <p class="field-note">支持糯叽机 v5、章鱼机 `.ee`，330/兔k机、zz、弯弯、Float、手抓糯米机与 csy 糯米机的 JSON / ZIP 备份。</p>
               <div class="file-row">
                 <label class="file-button" for="backup-file">选择文件</label>
                 <!-- 不设置 accept：部分 Windows/Chromium 文件选择器会把未注册的 .ee 扩展名置灰，
@@ -143,6 +143,14 @@
                 <label class="target-option">
                   <input type="radio" name="target" value="nuojiji" />
                   <span><strong>糯叽机 v5</strong><span>生成可导入的糯叽机 JSON（通用聊天数据）</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="wanwan" />
+                  <span><strong>弯弯小手机</strong><span>生成弯弯原生 JSON 备份</span></span>
+                </label>
+                <label class="target-option">
+                  <input type="radio" name="target" value="float" />
+                  <span><strong>Float 小手机</strong><span>生成 Float 原生 ZIP 备份</span></span>
                 </label>
               </div>
             </div>
@@ -224,6 +232,18 @@
           typeof data.version === "number" && (typeof data.timestamp === "number" || data.timestamp === undefined) &&
           (Array.isArray(data.characters) || Array.isArray(data.messages) || Array.isArray(data.worldbooks)) &&
           !data._exportVersion && !Array.isArray(data.chats));
+      }
+
+      function isWanwanBackup(data) {
+        return Boolean(data && typeof data === "object" && !Array.isArray(data) &&
+          data.version === 1 && data.appName === "弯弯" &&
+          (Array.isArray(data.characters) || Array.isArray(data.chats) || Array.isArray(data.messages)));
+      }
+
+      function isFloatManifest(manifest) {
+        return Boolean(manifest && typeof manifest === "object" &&
+          manifest.format === "ai-phone-backup" && typeof manifest.version === "number" &&
+          Array.isArray(manifest.modules));
       }
 
       function nuojijiSource(data) {
@@ -358,6 +378,95 @@
         return visit(root);
       }
 
+      // Float 把媒体单独存成 media/<sha256>.bin，JSON 里只留一个引用对象；
+      // 转换器内部统一用 data URL，所以在装配时就地还原。
+      function restoreFloatMedia(root, entryMap) {
+        const cache = new Map();
+        const visit = (value) => {
+          if (!value || typeof value !== "object") return value;
+          if (Array.isArray(value)) return value.map(visit);
+          if (value.__aiPhoneMediaRef === true) {
+            const ref = String(value.ref || "");
+            if (cache.has(ref)) return cache.get(ref);
+            const bytes = entryMap.get(`media/${ref}.bin`);
+            // 引用丢失时退回空串，让记录其余字段仍可转换。
+            const dataUrl = bytes
+              ? `data:${value.mimeType || "application/octet-stream"};base64,${bytesToBase64(bytes)}`
+              : "";
+            cache.set(ref, dataUrl);
+            return dataUrl;
+          }
+          if (value.__aiPhoneBlob === true) return value.dataUrl || "";
+          const output = {};
+          for (const key of Object.keys(value)) output[key] = visit(value[key]);
+          return output;
+        };
+        return visit(root);
+      }
+
+      function assembleFloatBackup(entryMap, manifest) {
+        const data = {
+          __float: true,
+          version: manifest.version,
+          exportedAt: manifest.createdAt,
+          idb: {},
+          kv: {},
+          localStorage: {},
+        };
+        const decoder = new TextDecoder("utf-8");
+
+        // 导出端按「每个数据源一个文件」写盘：modules/<模块>/000.json、001.json…
+        const modulePaths = Array.from(entryMap.keys())
+          .filter((name) => name.startsWith("modules/") && name.endsWith(".json"))
+          .sort();
+
+        for (const path of modulePaths) {
+          let payload;
+          try {
+            payload = JSON.parse(decoder.decode(entryMap.get(path)));
+          } catch (error) {
+            continue; // 单个模块损坏不应让整份备份无法读取
+          }
+          for (const source of asArray(payload?.sources)) {
+            if (!source || typeof source !== "object") continue;
+            if (source.type === "indexeddb" && Array.isArray(source.stores)) {
+              const db = data.idb[source.dbName] || (data.idb[source.dbName] = {});
+              for (const store of source.stores) {
+                if (!store || !store.name || !Array.isArray(store.records)) continue;
+                const rows = db[store.name] || (db[store.name] = []);
+                for (const record of store.records) {
+                  const value = restoreFloatMedia(record?.value, entryMap);
+                  // 无 keyPath 的仓库（如主题素材）把外部键并回记录，避免丢 id。
+                  if (value && typeof value === "object" && !Array.isArray(value)) {
+                    rows.push(store.keyPath ? value : { ...value, __key: record.key });
+                  } else {
+                    rows.push({ __key: record.key, __value: value });
+                  }
+                }
+              }
+            } else if ((source.type === "kv" || source.type === "localStorage") && Array.isArray(source.records)) {
+              const bucket = source.type === "kv" ? data.kv : data.localStorage;
+              for (const record of source.records) {
+                if (!record || typeof record.key !== "string") continue;
+                // KV/localStorage 的值是 JSON 字符串；解析失败就按原始字符串保留。
+                try {
+                  bucket[record.key] = restoreFloatMedia(JSON.parse(record.value), entryMap);
+                } catch (error) {
+                  bucket[record.key] = record.value;
+                }
+              }
+            }
+          }
+        }
+
+        const chatDb = data.idb.AiPhoneChatDB || {};
+        data.characters = asArray(data.kv.ai_phone_characters_v1);
+        data.contacts = asArray(chatDb.contacts);
+        data.sessions = asArray(chatDb.sessions);
+        data.messages = asArray(chatDb.messages);
+        return data;
+      }
+
       function assembleSullyV2(entryMap) {
         const manifest = parseZipJson(entryMap, "manifest.json", "损坏的手抓糯米机备份：缺少 manifest.json。");
         if (manifest.formatVersion !== 2 || !manifest.stores || typeof manifest.stores !== "object") {
@@ -445,9 +554,15 @@
         const decoder = new TextDecoder("utf-8");
         const fragments = [];
 
-        if (entryMap.has("manifest.json") && entryMap.has("metadata.json")) {
+        if (entryMap.has("manifest.json")) {
           const manifest = parseZipJson(entryMap, "manifest.json");
-          if (manifest && typeof manifest.stores === "object" && manifest.stores) {
+
+          if (isFloatManifest(manifest)) {
+            const data = assembleFloatBackup(entryMap, manifest);
+            return { format: "float", sourceLabel: "Float 小手机", data };
+          }
+
+          if (entryMap.has("metadata.json") && manifest && typeof manifest.stores === "object" && manifest.stores) {
             const data = assembleSullyV2(entryMap);
             if (!isSullyBackup(data)) throw new Error("此分片 ZIP 不是可识别的手抓糯米机备份。");
             return { ...sullySource(data), data };
@@ -512,12 +627,13 @@
           if (isOctopusBackup(data)) return { format: "octopus", sourceLabel: "章鱼机", data };
           if (isNuojijiBackup(data)) return { ...nuojijiSource(data), data };
           if (isZzBackup(data)) return { format: "zz", sourceLabel: "zz 小手机", data };
+          if (isWanwanBackup(data)) return { format: "wanwan", sourceLabel: "弯弯小手机", data };
           if (isEphoneBackup(data)) return { format: "ephone", sourceLabel: "330 / 兔k机", data };
           if (isSullyBackup(data)) return { ...sullySource(data), data };
         } catch (error) {
           throw new Error("文件不是有效的 JSON 备份，或文件内容已损坏。");
         }
-        throw new Error("未识别此备份格式。请选择糯叽机、章鱼机、330/兔k机、zz 或糯米机的原生备份文件。");
+        throw new Error("未识别此备份格式。请选择糯叽机、章鱼机、330/兔k机、zz、弯弯、Float 或糯米机的原生备份文件。");
       }
 
       function sourceData(data) {
@@ -1016,8 +1132,275 @@
         };
       }
 
+      // 弯弯把图片存成 __IMG__<url> 前缀，表情包另存在 stickerImage 字段。
+      function wanwanMessageContent(message) {
+        const content = valueOr(message, ["content", "text"], "");
+        if (typeof content === "string" && content.startsWith("__IMG__")) return content.slice(7);
+        return content;
+      }
+
+      // 弯弯的世界书藏在 config 的 lorebooks 键里，条目字段是 title/keywords。
+      function wanwanWorldBooks(lorebooks) {
+        return asArray(lorebooks)
+          .filter((book) => book && typeof book === "object")
+          .map((book, bookIndex) => ({
+            id: book.id || `wanwan_wb_${bookIndex + 1}`,
+            name: book.name || `世界书 ${bookIndex + 1}`,
+            enabled: book.enabled !== false,
+            content: asArray(book.entries).map((entry) => ({
+              keys: asArray(entry.keywords || entry.keys).map((keyword) => String(keyword)),
+              comment: entry.title || entry.comment || "从弯弯导入",
+              content: entry.content || "",
+              enabled: entry.enabled !== false,
+            })),
+          }));
+      }
+
+      function wanwanToEphone(rawData) {
+        const characters = asArray(rawData.characters);
+        const chats = asArray(rawData.chats);
+        const messages = asArray(rawData.messages);
+        const groupChats = asArray(rawData.groupChats);
+        const groupMessages = asArray(rawData.groupMessages);
+
+        const charById = new Map(characters.map((character) => [String(character.id), character]));
+        // type: 'user' 是玩家自己的人格，不该变成一个可聊天的角色。
+        const userChar = characters.find((character) => character.type === "user") || {};
+        const isContact = (character) => character.type !== "user";
+
+        const toHistory = (rows, isGroup) => rows
+          .slice()
+          .sort((left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0))
+          .map((message, index) => {
+            const converted = {
+              ...message,
+              role: message.role === "user" ? "user" : "assistant",
+              content: wanwanMessageContent(message),
+              timestamp: asTimestamp(message.createdAt || Date.now() + index),
+            };
+            if (isGroup && message.role !== "user") {
+              const sender = charById.get(String(message.senderId));
+              converted.senderId = String(message.senderId || "");
+              converted.charId = String(message.senderId || "");
+              if (sender?.name) converted.senderName = sender.nick || sender.name;
+            }
+            return converted;
+          });
+
+        const privateChats = chats
+          .map((chat) => {
+            const character = charById.get(String(chat.charId));
+            if (!character || !isContact(character)) return null;
+            return toEphoneChat({
+              ...character,
+              id: chat.id,
+              originalCharId: character.id,
+              name: character.nick || character.name || "未命名角色",
+              avatar: character.avatar || "",
+              persona: character.description || "",
+              myName: userChar.nick || userChar.name || "我",
+              myAvatar: userChar.avatar || "",
+              myPersona: userChar.description || "",
+              history: toHistory(messages.filter((message) => String(message.chatId) === String(chat.id)), false),
+            }, false);
+          })
+          .filter(Boolean);
+
+        const convertedGroupChats = groupChats.map((group) => toEphoneChat({
+          ...group,
+          id: group.id,
+          name: group.name || "未命名群聊",
+          avatar: group.avatar || "",
+          members: asArray(group.members)
+            .filter((memberId) => String(memberId) !== String(group.ownerUid))
+            .map((memberId) => {
+              const character = charById.get(String(memberId));
+              return character
+                ? { ...character, id: character.id, name: character.nick || character.name || String(memberId) }
+                : { id: memberId, name: String(memberId) };
+            }),
+          myName: userChar.nick || userChar.name || "我",
+          myAvatar: userChar.avatar || "",
+          history: toHistory(groupMessages.filter((message) => String(message.groupId) === String(group.id)), true),
+        }, true));
+
+        const configRows = asArray(rawData.config);
+        const configValue = (key) => configRows.find((row) => row && row.key === key)?.value;
+
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats: [...privateChats, ...convertedGroupChats],
+            worldBooks: wanwanWorldBooks(configValue("lorebooks")),
+            userStickers: asArray(rawData.stickers),
+            apiConfig: configValue("apiSettings") ? [configValue("apiSettings")] : [],
+            globalSettings: [{
+              name: userChar.nick || userChar.name || "我",
+              avatar: userChar.avatar || "",
+              bio: userChar.description || "",
+            }],
+          },
+        };
+      }
+
+      function floatToEphone(rawData) {
+        const characters = asArray(rawData.characters);
+        const contacts = asArray(rawData.contacts);
+        const sessions = asArray(rawData.sessions);
+        const messages = asArray(rawData.messages);
+
+        const charById = new Map(characters.map((character) => [String(character.id), character]));
+        const contactById = new Map(contacts.map((contact) => [String(contact.id), contact]));
+
+        const toHistory = (sessionId, isGroup) => messages
+          .filter((message) => String(message.sessionId) === String(sessionId))
+          .slice()
+          .sort((left, right) => {
+            const byOrder = Number(left.order ?? 0) - Number(right.order ?? 0);
+            if (byOrder) return byOrder;
+            return asTimestamp(left.createdAt) - asTimestamp(right.createdAt);
+          })
+          // tool 调用是 Float 专有的执行痕迹，其他小手机没有对应气泡。
+          .filter((message) => message.role !== "tool")
+          .map((message) => {
+            const converted = {
+              ...message,
+              role: message.role === "user" ? "user" : message.role === "system" ? "system" : "assistant",
+              content: message.mediaUrl && message.mediaType === "image" ? message.mediaUrl : (message.content || ""),
+              timestamp: asTimestamp(message.createdAt),
+            };
+            if (isGroup && message.role !== "user") {
+              const senderId = message.senderCharacterId || message.characterId;
+              if (senderId) {
+                converted.senderId = String(senderId);
+                converted.charId = String(senderId);
+                const sender = charById.get(String(senderId));
+                if (sender?.name) converted.senderName = sender.name;
+              }
+            }
+            return converted;
+          });
+
+        const chats = sessions.map((session) => {
+          if (session.isGroup) {
+            return toEphoneChat({
+              id: session.id,
+              name: session.groupName || session.alias || "未命名群聊",
+              avatar: "",
+              members: asArray(session.participantIds).map((characterId) => {
+                const character = charById.get(String(characterId));
+                return character || { id: characterId, name: String(characterId) };
+              }),
+              background: session.backgroundImage || "",
+              customBubbleCss: session.customCSS || "",
+              history: toHistory(session.id, true),
+            }, true);
+          }
+          const contact = contactById.get(String(session.contactId)) || {};
+          const character = charById.get(String(contact.characterId)) || {};
+          return toEphoneChat({
+            ...character,
+            id: session.id,
+            originalCharId: character.id,
+            name: session.alias || contact.nickname || character.name || "未命名角色",
+            avatar: character.avatar || "",
+            persona: character.persona || character.personality || "",
+            background: session.backgroundImage || "",
+            customBubbleCss: session.customCSS || "",
+            history: toHistory(session.id, false),
+          }, false);
+        });
+
+        // 未开过会话的角色卡也要带走，否则导入后角色直接丢失。
+        const usedCharacterIds = new Set(sessions
+          .map((session) => String(contactById.get(String(session.contactId))?.characterId || ""))
+          .filter(Boolean));
+        const orphanChats = characters
+          .filter((character) => !usedCharacterIds.has(String(character.id)))
+          .map((character) => toEphoneChat({
+            ...character,
+            id: `float_char_${character.id}`,
+            originalCharId: character.id,
+            name: character.name || "未命名角色",
+            avatar: character.avatar || "",
+            persona: character.persona || character.personality || "",
+            history: [],
+          }, false));
+
+        const identities = asArray(rawData.kv?.ai_phone_user_identities_v1);
+        const identity = identities.find((item) => item && typeof item === "object") || {};
+
+        return {
+          version: 3,
+          timestamp: Date.now(),
+          data: {
+            chats: [...chats, ...orphanChats],
+            worldBooks: floatWorldBooks(rawData),
+            userStickers: [],
+            apiConfig: asArray(rawData.kv?.ai_phone_api_configs_v1),
+            globalSettings: [{
+              name: identity.name || "我",
+              avatar: identity.avatar || "",
+              bio: identity.persona || identity.description || "",
+            }],
+          },
+        };
+      }
+
+      // 世界书在 Float 里存于设置库，不同版本键名不同，按结构挑出条目数组。
+      // 条目的关键词在 Float 里是一个逗号分隔的字符串（沿用 SillyTavern 格式），
+      // 开关字段是反向的 disable；老版本迁移前还留在 localStorage 的键里。
+      function floatWorldBookKeys(entry) {
+        if (Array.isArray(entry.keys)) return entry.keys.map((keyword) => String(keyword));
+        if (Array.isArray(entry.key)) return entry.key.map((keyword) => String(keyword));
+        return String(entry.key || entry.keyword || "")
+          .split(",")
+          .map((keyword) => keyword.trim())
+          .filter(Boolean);
+      }
+
+      function floatWorldBooks(rawData) {
+        const settingsDb = rawData.idb?.AiPhoneSettingsDB || {};
+        const candidates = [
+          ...asArray(settingsDb.worldBooks),
+          ...asArray(settingsDb.worldbooks),
+          ...asArray(rawData.kv?.ai_phone_worldbooks_v1),
+          ...asArray(rawData.localStorage?.ai_phone_worldbooks_v1),
+        ];
+        const seen = new Set();
+        return candidates
+          .filter((book) => book && typeof book === "object")
+          .filter((book) => {
+            // 同一本书可能同时出现在 IndexedDB 和迁移前的 localStorage 里。
+            const key = String(book.id || book.name || "");
+            if (!key || seen.has(key)) return !key;
+            seen.add(key);
+            return true;
+          })
+          .map((book, index) => ({
+            id: book.id || `float_wb_${index + 1}`,
+            name: book.name || book.title || `世界书 ${index + 1}`,
+            content: Array.isArray(book.entries)
+              ? book.entries.map((entry) => ({
+                  keys: floatWorldBookKeys(entry),
+                  comment: entry.comment || entry.name || "从 Float 导入",
+                  content: entry.content || "",
+                  enabled: entry.disable !== true && entry.enabled !== false,
+                }))
+              : [{
+                  keys: floatWorldBookKeys(book),
+                  comment: book.comment || book.name || "从 Float 导入",
+                  content: typeof book.content === "string" ? book.content : JSON.stringify(book.content || ""),
+                  enabled: book.disable !== true && book.enabled !== false,
+                }],
+          }));
+      }
+
       function toEphoneCompatible(sourceFormat, rawData) {
         if (sourceFormat === "nuojiji") return nuojijiToEphone(rawData);
+        if (sourceFormat === "wanwan") return wanwanToEphone(rawData);
+        if (sourceFormat === "float") return floatToEphone(rawData);
         if (sourceFormat === "ephone") {
           const data = sourceData(rawData);
           const chats = asArray(data.chats).map((chat) => ({ ...chat, history: normalizeMessages(chat.history) }));
@@ -1323,6 +1706,508 @@
         };
       }
 
+      // 弯弯的世界书：一本书 { id, name, scope, charIds, enabled, entries }，
+      // 条目 { id, title, content, keywords, position, enabled }。
+      function ephoneWorldBooksToWanwan(worldBooks) {
+        return asArray(worldBooks).map((book, bookIndex) => {
+          const entries = Array.isArray(book.content)
+            ? book.content
+            : [{ keys: [], comment: book.name, content: book.content }];
+          return {
+            id: `wb_${bookIndex + 1}`,
+            name: book.name || book.title || `世界书 ${bookIndex + 1}`,
+            // 转换过来的书没有绑定角色的依据，一律按全局注入，用户可自行改成单人。
+            scope: "global",
+            charIds: [],
+            enabled: book.enabled !== false,
+            entries: asArray(entries).map((entry, entryIndex) => ({
+              id: `wb_${bookIndex + 1}_${entryIndex + 1}`,
+              title: entry.comment || entry.title || entry.name || `条目 ${entryIndex + 1}`,
+              content: typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content ?? ""),
+              keywords: asArray(entry.keys || entry.keywords).map((keyword) => String(keyword)),
+              position: "middle",
+              enabled: entry.enabled !== false,
+            })).filter((entry) => entry.content),
+          };
+        }).filter((book) => book.entries.length);
+      }
+
+      function toWanwanBackup(sourceFormat, rawData) {
+        if (sourceFormat === "wanwan") return { ...rawData, exportedAt: Date.now() };
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const chats = asArray(data.chats);
+        const globalSettings = asArray(data.globalSettings)[0] || {};
+
+        // 弯弯的表主键是自增整数，转换时统一重新编号。
+        let nextCharId = 1;
+        const characters = [];
+        const charIdBySourceId = new Map();
+
+        const userId = nextCharId++;
+        characters.push({
+          id: userId,
+          type: "user",
+          group: "",
+          name: globalSettings.name || "我",
+          nick: globalSettings.name || "我",
+          gender: "",
+          role: "",
+          description: globalSettings.bio || globalSettings.desc || "",
+          avatar: globalSettings.avatar || "",
+          identity: {},
+          relations: [],
+        });
+
+        const addCharacter = (source, fallbackKey) => {
+          const settings = source.settings || {};
+          const sourceKey = String(source.originalCharId || source.id || fallbackKey);
+          if (charIdBySourceId.has(sourceKey)) return charIdBySourceId.get(sourceKey);
+          const id = nextCharId++;
+          charIdBySourceId.set(sourceKey, id);
+          characters.push({
+            id,
+            type: "char",
+            group: "",
+            name: valueOr(source, ["name", "remarkName", "nickname"], `角色 ${id}`),
+            nick: valueOr(source, ["name", "remarkName", "nickname"], `角色 ${id}`),
+            gender: "",
+            role: "",
+            description: valueOr(source, ["persona", "description", "systemPrompt"],
+              valueOr(settings, ["aiPersona", "ai-persona"], "")),
+            avatar: valueOr(source, ["avatar"], valueOr(settings, ["aiAvatar", "ai-avatar"], "")),
+            identity: {},
+            relations: [],
+          });
+          return id;
+        };
+
+        const privateChats = chats.filter((chat) => !chat.isGroup);
+        const groupChats = chats.filter((chat) => chat.isGroup);
+
+        let nextChatId = 1;
+        let nextMessageId = 1;
+        const wanwanChats = [];
+        const wanwanMessages = [];
+
+        privateChats.forEach((chat, index) => {
+          const charId = addCharacter(chat, `chat_${index}`);
+          const chatId = nextChatId++;
+          const history = normalizeMessages(chat.history);
+          const lastMessage = history.length ? history[history.length - 1] : null;
+          wanwanChats.push({
+            id: chatId,
+            charId,
+            ownerUid: userId,
+            createdAt: asTimestamp(chat.createdAt || Date.now()),
+            updatedAt: asTimestamp(lastMessage?.timestamp || chat.createdAt || Date.now()),
+            unread: 0,
+            lastMessage: typeof lastMessage?.content === "string" ? lastMessage.content.slice(0, 50) : "",
+          });
+          history.forEach((message) => {
+            const content = valueOr(message, ["content", "text", "message"], "");
+            wanwanMessages.push({
+              id: nextMessageId++,
+              chatId,
+              charId,
+              role: message.role === "user" ? "user" : "assistant",
+              content: typeof content === "string" && content.startsWith("data:image/")
+                ? `__IMG__${content}`
+                : (typeof content === "string" ? content : JSON.stringify(content)),
+              createdAt: asTimestamp(message.timestamp),
+            });
+          });
+        });
+
+        const wanwanGroupChats = [];
+        const wanwanGroupMessages = [];
+        let nextGroupId = 1;
+        let nextGroupMessageId = 1;
+
+        groupChats.forEach((chat, index) => {
+          const groupId = nextGroupId++;
+          const memberIds = asArray(chat.members).map((member, memberIndex) => {
+            if (member && typeof member === "object") return addCharacter(member, `${chat.id}_m${memberIndex}`);
+            const key = String(member);
+            return charIdBySourceId.get(key) ?? addCharacter({ id: key, name: key }, key);
+          });
+          wanwanGroupChats.push({
+            id: groupId,
+            name: chat.name || `群聊 ${index + 1}`,
+            ownerUid: userId,
+            ownerId: userId,
+            members: [...memberIds, userId],
+            adminIds: [],
+            avatar: chat.avatar || "",
+            createdAt: asTimestamp(chat.createdAt || Date.now()),
+            unread: 0,
+          });
+          normalizeMessages(chat.history).forEach((message) => {
+            const isUser = message.role === "user";
+            const rawSender = message.charId || message.senderId || message.memberId;
+            const senderKey = rawSender && typeof rawSender === "object" ? String(rawSender.id) : String(rawSender || "");
+            const content = valueOr(message, ["content", "text", "message"], "");
+            wanwanGroupMessages.push({
+              id: nextGroupMessageId++,
+              groupId,
+              senderId: isUser ? userId : (charIdBySourceId.get(senderKey) ?? memberIds[0] ?? userId),
+              role: isUser ? "user" : "assistant",
+              content: typeof content === "string" && content.startsWith("data:image/")
+                ? `__IMG__${content}`
+                : (typeof content === "string" ? content : JSON.stringify(content)),
+              createdAt: asTimestamp(message.timestamp),
+            });
+          });
+        });
+
+        const apiSettings = asArray(data.apiConfig)[0];
+        const lorebooks = ephoneWorldBooksToWanwan(data.worldBooks);
+        const config = [];
+        if (apiSettings) config.push({ key: "apiSettings", value: apiSettings });
+        // 弯弯的世界书不是独立表，而是 config 里 key='lorebooks' 的一整个数组。
+        if (lorebooks.length) config.push({ key: "lorebooks", value: lorebooks });
+
+        return {
+          version: 1,
+          exportedAt: Date.now(),
+          appName: "弯弯",
+          config,
+          characters,
+          chats: wanwanChats,
+          messages: wanwanMessages,
+          groupChats: wanwanGroupChats,
+          groupMessages: wanwanGroupMessages,
+          moments: [],
+          finance: [],
+          offlineChats: [],
+          stickers: asArray(data.userStickers).map((sticker, index) => ({
+            id: index + 1,
+            categoryId: 1,
+            name: sticker.name || sticker.meaning || `表情 ${index + 1}`,
+            image: sticker.url || sticker.image || sticker.data || "",
+          })),
+          stickerCategories: [{ id: 1, name: "导入表情" }],
+          memories: [],
+          memoryRuns: [],
+          callRecords: [],
+          smsConversations: [],
+          smsMessages: [],
+          imageBlobs: [],
+          doorModules: [],
+          doorResults: [],
+          avgSaves: [],
+          avgConfigs: [],
+          mcpServers: [],
+          mcpToolTraces: [],
+          localStorage: {},
+        };
+      }
+
+      const CRC32_TABLE = (() => {
+        const table = new Uint32Array(256);
+        for (let index = 0; index < 256; index += 1) {
+          let value = index;
+          for (let bit = 0; bit < 8; bit += 1) {
+            value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+          }
+          table[index] = value >>> 0;
+        }
+        return table;
+      })();
+
+      function crc32(bytes) {
+        let crc = 0xffffffff;
+        for (let index = 0; index < bytes.length; index += 1) {
+          crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ bytes[index]) & 0xff];
+        }
+        return (crc ^ 0xffffffff) >>> 0;
+      }
+
+      // 只写 STORE（不压缩）条目：Float 用 JSZip 读取，能正常解析；
+      // 省掉 deflate 也避免了浏览器压缩流的兼容问题。
+      async function buildZipBlob(files) {
+        const encoder = new TextEncoder();
+        const localParts = [];
+        const centralParts = [];
+        let offset = 0;
+
+        for (const file of files) {
+          const nameBytes = encoder.encode(file.name);
+          const data = file.bytes;
+          const checksum = crc32(data);
+
+          const local = new Uint8Array(30 + nameBytes.length);
+          const localView = new DataView(local.buffer);
+          localView.setUint32(0, 0x04034b50, true);
+          localView.setUint16(4, 20, true);
+          localView.setUint16(6, 0x0800, true); // UTF-8 文件名
+          localView.setUint16(8, 0, true);      // STORE
+          localView.setUint32(14, checksum, true);
+          localView.setUint32(18, data.length, true);
+          localView.setUint32(22, data.length, true);
+          localView.setUint16(26, nameBytes.length, true);
+          local.set(nameBytes, 30);
+          localParts.push(local, data);
+
+          const central = new Uint8Array(46 + nameBytes.length);
+          const centralView = new DataView(central.buffer);
+          centralView.setUint32(0, 0x02014b50, true);
+          centralView.setUint16(4, 20, true);
+          centralView.setUint16(6, 20, true);
+          centralView.setUint16(8, 0x0800, true);
+          centralView.setUint16(10, 0, true);
+          centralView.setUint32(16, checksum, true);
+          centralView.setUint32(20, data.length, true);
+          centralView.setUint32(24, data.length, true);
+          centralView.setUint16(28, nameBytes.length, true);
+          centralView.setUint32(42, offset, true);
+          central.set(nameBytes, 46);
+          centralParts.push(central);
+
+          offset += local.length + data.length;
+        }
+
+        const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+        const end = new Uint8Array(22);
+        const endView = new DataView(end.buffer);
+        endView.setUint32(0, 0x06054b50, true);
+        endView.setUint16(8, files.length, true);
+        endView.setUint16(10, files.length, true);
+        endView.setUint32(12, centralSize, true);
+        endView.setUint32(16, offset, true);
+
+        return new Blob([...localParts, ...centralParts, end], { type: "application/zip" });
+      }
+
+      // 索引要跟 Float 的 Dexie schema 一致：导入到一个从没装过 Float 的浏览器时，
+      // 是这份声明决定新建的 objectStore 长什么样；缺索引会让 Dexie 的查询报 SchemaError。
+      const FLOAT_CHAT_INDEXES = {
+        messages: ["sessionId", "createdAt"],
+        sessions: ["contactId"],
+        contacts: ["characterId"],
+      };
+
+      function floatStore(name, keyPath, records) {
+        const indexes = (FLOAT_CHAT_INDEXES[name] || []).map((field) => ({
+          name: field,
+          keyPath: field,
+          unique: false,
+          multiEntry: false,
+        }));
+        return { name, keyPath, autoIncrement: false, indexes, records };
+      }
+
+      // Float 的世界书条目沿用 SillyTavern 的字段：关键词是逗号串 key，
+      // 开关是反向的 disable，注入位置默认 before_char。
+      function ephoneWorldBooksToFloat(worldBooks, nowIso) {
+        const createdAt = Date.parse(nowIso) || Date.now();
+        return asArray(worldBooks).map((book, bookIndex) => {
+          const entries = Array.isArray(book.content)
+            ? book.content
+            : [{ keys: [], comment: book.name, content: book.content }];
+          return {
+            id: `wb_${bookIndex + 1}`,
+            name: book.name || book.title || `世界书 ${bookIndex + 1}`,
+            description: "",
+            createdAt,
+            updatedAt: createdAt,
+            entries: asArray(entries).map((entry, entryIndex) => ({
+              uid: `wb_${bookIndex + 1}_${entryIndex + 1}`,
+              key: asArray(entry.keys || entry.keywords).map((keyword) => String(keyword)).join(","),
+              content: typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content ?? ""),
+              comment: entry.comment || entry.title || entry.name || "",
+              use_regex: false,
+              disable: entry.enabled === false,
+              constant: false,
+              position: "before_char",
+              depth: 0,
+              probability: 100,
+              useProbability: false,
+              role: 0,
+              insertion_order: (entryIndex + 1) * 10,
+            })).filter((entry) => entry.content),
+          };
+        }).filter((book) => book.entries.length);
+      }
+
+      function toFloatBackup(sourceFormat, rawData) {
+        const data = toEphoneCompatible(sourceFormat, rawData).data;
+        const chats = asArray(data.chats);
+        const globalSettings = asArray(data.globalSettings)[0] || {};
+        const now = new Date().toISOString();
+        const isoAt = (value) => new Date(asTimestamp(value)).toISOString();
+
+        const characters = [];
+        const characterIdBySourceId = new Map();
+        const addCharacter = (source, fallbackKey) => {
+          const settings = source.settings || {};
+          const sourceKey = String(source.originalCharId || source.id || fallbackKey);
+          if (characterIdBySourceId.has(sourceKey)) return characterIdBySourceId.get(sourceKey);
+          const id = `char_${characters.length + 1}`;
+          characterIdBySourceId.set(sourceKey, id);
+          characters.push({
+            id,
+            name: valueOr(source, ["name", "remarkName", "nickname"], `角色 ${characters.length + 1}`),
+            avatar: valueOr(source, ["avatar"], valueOr(settings, ["aiAvatar", "ai-avatar"], "")) || null,
+            persona: valueOr(source, ["persona", "description", "systemPrompt"],
+              valueOr(settings, ["aiPersona", "ai-persona"], "")),
+            createdAt: now,
+            updatedAt: now,
+          });
+          return id;
+        };
+
+        const contacts = [];
+        const sessions = [];
+        const messages = [];
+
+        chats.forEach((chat, chatIndex) => {
+          const sessionId = `session_${chatIndex + 1}`;
+          const history = normalizeMessages(chat.history);
+          const isGroup = Boolean(chat.isGroup);
+          let participantIds = [];
+
+          if (isGroup) {
+            participantIds = asArray(chat.members).map((member, memberIndex) => (
+              member && typeof member === "object"
+                ? addCharacter(member, `${chat.id}_m${memberIndex}`)
+                : addCharacter({ id: member, name: String(member) }, String(member))
+            ));
+          } else {
+            const characterId = addCharacter(chat, `chat_${chatIndex}`);
+            contacts.push({
+              id: `contact_${chatIndex + 1}`,
+              characterId,
+              nickname: chat.name || "",
+              addedAt: now,
+            });
+          }
+
+          const lastMessage = history.length ? history[history.length - 1] : null;
+          const lastContent = valueOr(lastMessage || {}, ["content", "text", "message"], "");
+          sessions.push({
+            id: sessionId,
+            contactId: isGroup ? "" : `contact_${chatIndex + 1}`,
+            unreadCount: 0,
+            updatedAt: isoAt(lastMessage?.timestamp || Date.now()),
+            isPinned: Boolean(chat.isPinned),
+            lastMessagePreview: typeof lastContent === "string" ? lastContent.slice(0, 50) : "",
+            ...(chat.background || chat.chatBg ? { backgroundImage: chat.background || chat.chatBg } : {}),
+            ...(isGroup ? {
+              isGroup: true,
+              groupName: chat.name || `群聊 ${chatIndex + 1}`,
+              participantIds,
+              groupOwnerId: "self",
+              groupAdminIds: [],
+            } : {}),
+          });
+
+          history.forEach((message, messageIndex) => {
+            const content = valueOr(message, ["content", "text", "message"], "");
+            const text = typeof content === "string" ? content : JSON.stringify(content);
+            const isUser = message.role === "user";
+            const rawSender = message.charId || message.senderId || message.memberId;
+            const senderKey = rawSender && typeof rawSender === "object" ? String(rawSender.id) : String(rawSender || "");
+            const isImage = text.startsWith("data:image/");
+            messages.push({
+              id: `msg_${messages.length + 1}`,
+              sessionId,
+              role: isUser ? "user" : message.role === "system" ? "system" : "assistant",
+              content: isImage ? "" : text,
+              status: "read",
+              createdAt: isoAt(message.timestamp),
+              order: messageIndex,
+              ...(isImage ? { mediaType: "image", mediaUrl: text } : {}),
+              ...(isGroup && !isUser ? {
+                characterId: characterIdBySourceId.get(senderKey) || participantIds[0] || "",
+              } : {}),
+            });
+          });
+        });
+
+        const identity = {
+          id: "identity_1",
+          name: globalSettings.name || "我",
+          avatar: globalSettings.avatar || "",
+          persona: globalSettings.bio || globalSettings.desc || "",
+        };
+
+        // 键要落在 Float 自己登记的模块里：角色卡在 characters，
+        // API 配置和用户身份在 settings。放错模块时用户按模块勾选导入就会漏数据。
+        const characterKv = [{ key: "ai_phone_characters_v1", value: JSON.stringify(characters) }];
+        const settingsKv = [{ key: "ai_phone_user_identities_v1", value: JSON.stringify([identity]) }];
+        const apiConfigs = asArray(data.apiConfig);
+        if (apiConfigs.length) {
+          settingsKv.push({ key: "ai_phone_api_configs_v1", value: JSON.stringify(apiConfigs) });
+        }
+
+        const worldBooks = ephoneWorldBooksToFloat(data.worldBooks, now);
+        const settingsSources = [{ type: "kv", records: settingsKv }];
+        if (worldBooks.length) {
+          settingsSources.unshift({
+            type: "indexeddb",
+            dbName: "AiPhoneSettingsDB",
+            stores: [floatStore("worldBooks", "id", worldBooks.map((record) => ({ value: record })))],
+          });
+        }
+
+        const payloads = [
+          {
+            moduleId: "chat",
+            label: "聊天数据",
+            records: messages.length + sessions.length + contacts.length,
+            sources: [{
+              type: "indexeddb",
+              dbName: "AiPhoneChatDB",
+              stores: [
+                floatStore("messages", "id", messages.map((record) => ({ value: record }))),
+                floatStore("sessions", "id", sessions.map((record) => ({ value: record }))),
+                floatStore("contacts", "id", contacts.map((record) => ({ value: record }))),
+              ],
+            }],
+          },
+          {
+            moduleId: "characters",
+            label: "角色卡与素材",
+            records: characterKv.length,
+            sources: [{ type: "kv", records: characterKv }],
+          },
+          {
+            moduleId: "settings",
+            label: "设置与规则",
+            records: settingsKv.length + worldBooks.length,
+            sources: settingsSources,
+          },
+        ];
+
+        const encoder = new TextEncoder();
+        const files = payloads.map((payload) => ({
+          name: `modules/${payload.moduleId}/000.json`,
+          bytes: encoder.encode(JSON.stringify({ moduleId: payload.moduleId, sources: payload.sources })),
+        }));
+
+        const modules = payloads.map((payload, index) => ({
+          id: payload.moduleId,
+          label: payload.label,
+          records: payload.records,
+          bytes: files[index].bytes.length,
+        }));
+
+        files.push({
+          name: "manifest.json",
+          bytes: encoder.encode(JSON.stringify({
+            format: "ai-phone-backup",
+            version: 1,
+            createdAt: now,
+            origin: "备份转换器",
+            modules,
+            totalRecords: modules.reduce((total, item) => total + item.records, 0),
+            totalBytes: modules.reduce((total, item) => total + item.bytes, 0),
+          }, null, 2)),
+        });
+
+        return buildZipBlob(files);
+      }
+
       function collectStats(format, data) {
         if (format === "nuojiji") {
           const converted = nuojijiToEphone(data).data;
@@ -1362,6 +2247,24 @@
             worldBooks: asArray(data.worldbooks).length,
           };
         }
+        if (format === "wanwan") {
+          return {
+            characters: asArray(data.characters).filter((character) => character.type !== "user").length,
+            groups: asArray(data.groupChats).length,
+            messages: asArray(data.messages).length + asArray(data.groupMessages).length,
+            worldBooks: wanwanWorldBooks(
+              asArray(data.config).find((row) => row && row.key === "lorebooks")?.value).length,
+          };
+        }
+        if (format === "float") {
+          const sessions = asArray(data.sessions);
+          return {
+            characters: asArray(data.characters).length,
+            groups: sessions.filter((session) => session.isGroup).length,
+            messages: asArray(data.messages).length,
+            worldBooks: asArray(floatWorldBooks(data)).length,
+          };
+        }
         const source = sourceData(data);
         const chats = asArray(source.chats);
         return {
@@ -1373,7 +2276,8 @@
       }
 
       function targetSupportsNuojiji(target) {
-        return target === "ephone" || target === "octopus" || target === "nuojiji";
+        // 弯弯与 Float 都从 ephone 中间格式生成，糯叽机已有对应的规范化路径。
+        return ["ephone", "octopus", "nuojiji", "wanwan", "float"].includes(target);
       }
 
       async function gzipJson(data) {
@@ -1426,7 +2330,7 @@
           const source = await readBackup(selectedFile);
           const target = document.querySelector('input[name="target"]:checked').value;
           if (source.format === "nuojiji" && !targetSupportsNuojiji(target)) {
-            throw new Error("糯叽机 v5 目前只支持转换到 330 / 兔k机或章鱼机。");
+            throw new Error("糯叽机 v5 目前只支持转换到 330 / 兔k机、章鱼机、弯弯或 Float。");
           }
           const stats = collectStats(source.format, source.data);
           const date = new Date().toISOString().slice(0, 10);
@@ -1446,6 +2350,13 @@
             const output = toZzBackup(source.format, source.data);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
             showSuccess(source.sourceLabel, "zz 小手机", stats, blob, `iphone-sim-config-converted-${date}.json`);
+          } else if (target === "wanwan") {
+            const output = toWanwanBackup(source.format, source.data);
+            const blob = new Blob([JSON.stringify(output)], { type: "application/json" });
+            showSuccess(source.sourceLabel, "弯弯小手机", stats, blob, `弯弯_转换备份_${date}.json`);
+          } else if (target === "float") {
+            const blob = await toFloatBackup(source.format, source.data);
+            showSuccess(source.sourceLabel, "Float 小手机", stats, blob, `float-converted-backup-${date}.zip`);
           } else {
             const output = toSullyBackup(target, source.format, source.data);
             const blob = new Blob([JSON.stringify(output, null, 2)], { type: "application/json" });
