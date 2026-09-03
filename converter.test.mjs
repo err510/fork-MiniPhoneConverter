@@ -174,6 +174,21 @@ const handRead = await context.readZipBackup({ arrayBuffer: async () => handZip 
 assert.equal(handRead.format, 'sully-hand');
 assert.equal(handRead.data.characters[0].name, '手抓角色');
 
+// formatVersion: 3 是真实全量导出（mode: "full"），不应被当作分片版本报错。
+const handZipV3 = storedZip({
+  'manifest.json': JSON.stringify({
+    formatVersion: 3,
+    mode: 'full',
+    stores: { characters: { parts: 1, count: 1 }, messages: { parts: 1, count: 0 } },
+  }),
+  'metadata.json': JSON.stringify({ version: 3, timestamp: 3 }),
+  'stores/characters.000.json': JSON.stringify([{ id: 'c3', name: '手抓角色V3' }]),
+  'stores/messages.000.json': '[]',
+});
+const handReadV3 = await context.readZipBackup({ arrayBuffer: async () => handZipV3 });
+assert.equal(handReadV3.format, 'sully-hand', 'formatVersion: 3 的全量备份应识别为 sully-hand');
+assert.equal(handReadV3.data.characters[0].name, '手抓角色V3');
+
 const nuojiji = {
   version: 5,
   data: {

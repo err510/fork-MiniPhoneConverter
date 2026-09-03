@@ -697,10 +697,12 @@
       }
 
       function isYuanUwuBackup(data) {
+        // yuan改uwu 导出：version === 1，chats / worldBooks 在顶层，无 localStorage 字段。
+        // 不能只靠 typeof version === "number" 判断，EPhone v3 也有数字 version；
+        // yuan改uwu 固定导出 version: 1，且不走 version === 3 + data.data 的嵌套结构。
         return Boolean(data && typeof data === "object" &&
-          typeof data.version === "number" && typeof data.timestamp === "number" &&
-          Array.isArray(data.chats) && Array.isArray(data.worldBooks) &&
-          data.localStorage && typeof data.localStorage === "object");
+          data.version === 1 && typeof data.timestamp === "number" &&
+          Array.isArray(data.chats) && Array.isArray(data.worldBooks));
       }
 
       function is1900UwuBackup(data) {
@@ -932,7 +934,7 @@
 
       function assembleSullyV2(entryMap) {
         const manifest = parseZipJson(entryMap, "manifest.json", "损坏的手抓糯米机备份：缺少 manifest.json。");
-        if (manifest.formatVersion !== 2 || !manifest.stores || typeof manifest.stores !== "object") {
+        if ((manifest.formatVersion !== 2 && manifest.formatVersion !== 3) || !manifest.stores || typeof manifest.stores !== "object") {
           throw new Error(`不支持的手抓糯米机分片备份版本：${manifest.formatVersion ?? "未知"}。`);
         }
         const data = parseZipJson(entryMap, "metadata.json", "损坏的手抓糯米机备份：缺少 metadata.json。");
